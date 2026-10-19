@@ -985,6 +985,11 @@ static void set_snapshot_callbacks(void* opaque,
 
 static void map_user_backed_ram(uint64_t gpa, void* hva, uint64_t size) {
     android::RecursiveScopedVmLock vmlock;
+    if (!gpa || !size) {
+        derror("%s: invalid guest physical address 0x%llx or size 0x%llx. Ignoring.",
+               __func__, (unsigned long long)gpa, (unsigned long long)size);
+        return;
+    }
     if (!hva) {
         derror("%s: null host virtual address passed for gpa:0x%llx. Ignoring.",
                __func__, (unsigned long long)gpa);
