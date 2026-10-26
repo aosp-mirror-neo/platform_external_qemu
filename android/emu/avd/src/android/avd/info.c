@@ -1917,6 +1917,115 @@ void avdInfo_getSkinInfo(const AvdInfo* i, char** pSkinName, char** pSkinDir) {
     return;
 }
 
+bool avdInfo_checkSkinMatchesLcd(const AvdInfo* i,
+                                 const char* commandLineSkin,
+                                 const char* skinName,
+                                 const char* skinDir,
+                                 bool lcdReplacesNumericSkin) {
+    // A -skin option replaces the display size from config.ini, and a
+    // displayless device has no display size to check.
+    if (commandLineSkin != NULL || i->configIni == NULL ||
+        i->contentPath == NULL ||
+        iniFile_getBoolean(i->configIni, "hw.displayless", "false")) {
+        return true;
+    }
+
+    // With only one of the two keys, the other one silently falls back to a
+    // default value.
+    CIniFile* config = i->configIni;
+    const bool hasLcdWidth = iniFile_hasKey(config, "hw.lcd.width");
+    const bool hasLcdHeight = iniFile_hasKey(config, "hw.lcd.height");
+    if (hasLcdWidth != hasLcdHeight) {
+        const char* setKey = hasLcdWidth ? "hw.lcd.width" : "hw.lcd.height";
+        const char* missingKey = hasLcdWidth ? "hw.lcd.height" : "hw.lcd.width";
+        char* setValue = iniFile_getString(config, setKey, "");
+        derror("Incomplete display size in %s" PATH_SEP CORE_CONFIG_INI
+               ": %s=%s is set but %s is missing. "
+               "Set both hw.lcd.width and hw.lcd.height.",
+               i->contentPath, setKey, setValue, missingKey);
+        AFREE(setValue);
+        return false;
+    }
+
+    if (hasLcdWidth) {
+        const int lcdWidth = iniFile_getInteger(config, "hw.lcd.width", 0);
+        const int lcdHeight = iniFile_getInteger(config, "hw.lcd.height", 0);
+        if (lcdWidth <= 0 || lcdHeight <= 0) {
+            char* wVal = iniFile_getString(config, "hw.lcd.width", "");
+            char* hVal = iniFile_getString(config, "hw.lcd.height", "");
+            derror("Invalid display size in %s" PATH_SEP CORE_CONFIG_INI
+                   ": hw.lcd.width=%s, hw.lcd.height=%s. "
+                   "Both dimensions must be positive integers.",
+                   i->contentPath, wVal, hVal);
+            AFREE(wVal);
+            AFREE(hVal);
+            return false;
+        }
+    }
+
+    // Reject non-positive numeric skin dimensions like "-500x800" or "0x800".
+    if (skinDir == NULL && skinName != NULL) {
+        int skinWidth = 0;
+        int skinHeight = 0;
+        if (sscanf(skinName, "%dx%d", &skinWidth, &skinHeight) == 2 &&
+            (skinWidth <= 0 || skinHeight <= 0)) {
+            char* skinPath = iniFile_getString(config, SKIN_PATH, NULL);
+            const char* skinKey =
+                    (skinPath != NULL && !strcmp(skinPath, skinName))
+                            ? SKIN_PATH
+                            : SKIN_NAME;
+            AFREE(skinPath);
+            derror("Invalid display size in %s" PATH_SEP CORE_CONFIG_INI
+                   ": %s=%s. "
+                   "Both dimensions must be positive integers.",
+                   i->contentPath, skinKey, skinName);
+            return false;
+        }
+    }
+
+    // An on-disk skin brings its own layout, and a numeric skin that gets
+    // replaced with the LCD size cannot override it, so only a numeric skin
+    // from config.ini that is used as is can contradict hw.lcd.width and
+    // hw.lcd.height.
+    if (!hasLcdWidth || skinDir != NULL || skinName == NULL ||
+        lcdReplacesNumericSkin) {
+        return true;
+    }
+
+    int skinWidth = 0;
+    int skinHeight = 0;
+    if (sscanf(skinName, "%dx%d", &skinWidth, &skinHeight) != 2) {
+        return true;
+    }
+
+    const int lcdWidth = iniFile_getInteger(config, "hw.lcd.width", 0);
+    const int lcdHeight = iniFile_getInteger(config, "hw.lcd.height", 0);
+
+    // The SDK can write a generic skin in the orientation of the device's
+    // default state, which is the LCD size rotated by 90 degrees.
+    if ((skinWidth == lcdWidth && skinHeight == lcdHeight) ||
+        (skinWidth == lcdHeight && skinHeight == lcdWidth)) {
+        return true;
+    }
+
+    // avdInfo_getSkinInfo() takes a numeric skin.path over skin.name.
+    char* skinPath = iniFile_getString(config, SKIN_PATH, NULL);
+    const char* skinKey = (skinPath != NULL && !strcmp(skinPath, skinName))
+                                  ? SKIN_PATH
+                                  : SKIN_NAME;
+    AFREE(skinPath);
+
+    derror("Inconsistent display size in %s" PATH_SEP CORE_CONFIG_INI
+           ": %s=%s does not match hw.lcd.width=%d, hw.lcd.height=%d. "
+           "To use %dx%d, set " SKIN_NAME " and " SKIN_PATH
+           " to %dx%d or delete both lines. "
+           "To use %dx%d, set hw.lcd.width=%d and hw.lcd.height=%d.",
+           i->contentPath, skinKey, skinName, lcdWidth, lcdHeight, lcdWidth,
+           lcdHeight, lcdWidth, lcdHeight, skinWidth, skinHeight, skinWidth,
+           skinHeight);
+    return false;
+}
+
 char* avdInfo_getCharmapFile(const AvdInfo* i, const char* charmapName) {
     char fileNameBuff[PATH_MAX];
     const char* fileName;

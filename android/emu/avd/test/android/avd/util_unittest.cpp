@@ -20,10 +20,11 @@
 #include "aemu/base/memory/ScopedPtr.h"
 #include "android/base/testing/TestSystem.h"
 
-#include <iostream>
-#include <fstream>
-#include <memory>
 #include <gtest/gtest.h>
+#include <fstream>
+#include <initializer_list>
+#include <iostream>
+#include <memory>
 #include "android/base/testing/TestTempDir.h"
 
 using android::base::pj;
@@ -626,4 +627,224 @@ TEST(AvdInfoTest, is_generic_foldable) {
     EXPECT_FALSE(avdInfo_isGenericFoldable("foldable_4_3_测试_🚀_é"));
     EXPECT_FALSE(avdInfo_isGenericFoldable(""));
     EXPECT_FALSE(avdInfo_isGenericFoldable(nullptr));
+}
+
+struct ConfigEntry {
+    const char* key;
+    const char* value;
+};
+
+// Returns a test AVD whose config.ini contains |entries|.
+static AvdInfo* newAvdWithConfig(std::initializer_list<ConfigEntry> entries) {
+    AvdInfo* info = avdInfo_new_for_testing(AVD_OTHER);
+    info->contentPath = ASTRDUP("/dummy/avd");
+    info->sdkRootPath = ASTRDUP("/dummy/sdk");
+    info->configIni = iniFile_newEmpty("config.ini");
+    for (const ConfigEntry& entry : entries) {
+        iniFile_setValue(info->configIni, entry.key, entry.value);
+    }
+    return info;
+}
+
+// Resolves the skin from config.ini |entries| the way
+// emulator_parseCommonCommandLineOptions() does and checks it against
+// hw.lcd.width and hw.lcd.height.
+static bool skinMatchesLcd(std::initializer_list<ConfigEntry> entries,
+                           const char* commandLineSkin = nullptr,
+                           bool lcdReplacesNumericSkin = false) {
+    AvdInfo* info = newAvdWithConfig(entries);
+    char* skinName = nullptr;
+    char* skinDir = nullptr;
+    avdInfo_getSkinInfo(info, &skinName, &skinDir);
+    const bool matches = avdInfo_checkSkinMatchesLcd(
+            info, commandLineSkin, skinName, skinDir, lcdReplacesNumericSkin);
+    AFREE(skinName);
+    AFREE(skinDir);
+    avdInfo_free(info);
+    return matches;
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_sameSize) {
+    EXPECT_TRUE(skinMatchesLcd({{"skin.name", "1440x3088"},
+                                {"skin.path", "1440x3088"},
+                                {"hw.lcd.width", "1440"},
+                                {"hw.lcd.height", "3088"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_rotatedSize) {
+    // sdklib writes a generic skin in the orientation of the device's default
+    // state, e.g. 600x1024 for the 1024x600 "7in WSVGA (Tablet)" profile.
+    EXPECT_TRUE(skinMatchesLcd({{"skin.name", "600x1024"},
+                                {"skin.path", "600x1024"},
+                                {"hw.lcd.width", "1024"},
+                                {"hw.lcd.height", "600"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_skinNameMismatch) {
+    // The config.ini from b/576728234.
+    EXPECT_FALSE(skinMatchesLcd({{"skin.name", "1080x2400"},
+                                 {"skin.path", "_no_skin"},
+                                 {"hw.lcd.width", "1440"},
+                                 {"hw.lcd.height", "3088"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_skinPathMismatch) {
+    EXPECT_FALSE(skinMatchesLcd({{"skin.path", "1080x2400"},
+                                 {"hw.lcd.width", "1440"},
+                                 {"hw.lcd.height", "3088"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_skinWithDepth) {
+    EXPECT_TRUE(skinMatchesLcd({{"skin.name", "1440x3088x32"},
+                                {"hw.lcd.width", "1440"},
+                                {"hw.lcd.height", "3088"}}));
+    EXPECT_FALSE(skinMatchesLcd({{"skin.name", "1080x2400x32"},
+                                 {"hw.lcd.width", "1440"},
+                                 {"hw.lcd.height", "3088"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_commandLineSkinIsNotChecked) {
+    EXPECT_TRUE(skinMatchesLcd({{"skin.name", "1080x2400"},
+                                {"hw.lcd.width", "1440"},
+                                {"hw.lcd.height", "3088"}},
+                               "1080x2400"));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_onDiskSkinIsNotChecked) {
+    // A skin directory brings its own layout, even if its name looks numeric.
+    AvdInfo* info = newAvdWithConfig(
+            {{"hw.lcd.width", "1440"}, {"hw.lcd.height", "3088"}});
+    EXPECT_TRUE(avdInfo_checkSkinMatchesLcd(info, nullptr, "1080x2400",
+                                            "/dummy/sdk/skins", false));
+    avdInfo_free(info);
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_noLcdSizeIsNotChecked) {
+    EXPECT_TRUE(skinMatchesLcd({{"skin.name", "1080x2400"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_negativeSkinWidth) {
+    EXPECT_FALSE(skinMatchesLcd({{"skin.name", "-500x800"},
+                                 {"hw.lcd.width", "1440"},
+                                 {"hw.lcd.height", "3088"}}));
+    EXPECT_FALSE(skinMatchesLcd({{"skin.name", "-500x800"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_negativeSkinHeight) {
+    EXPECT_FALSE(skinMatchesLcd({{"skin.name", "1080x-2400"},
+                                 {"hw.lcd.width", "1440"},
+                                 {"hw.lcd.height", "3088"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_zeroSkinSize) {
+    EXPECT_FALSE(skinMatchesLcd({{"skin.name", "0x800"},
+                                 {"hw.lcd.width", "1440"},
+                                 {"hw.lcd.height", "3088"}}));
+    EXPECT_FALSE(skinMatchesLcd({{"skin.name", "1080x0"},
+                                 {"hw.lcd.width", "1440"},
+                                 {"hw.lcd.height", "3088"}}));
+    EXPECT_FALSE(skinMatchesLcd({{"skin.name", "0x0"},
+                                 {"hw.lcd.width", "1440"},
+                                 {"hw.lcd.height", "3088"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_negativeLcdWidth) {
+    EXPECT_FALSE(skinMatchesLcd(
+            {{"hw.lcd.width", "-1440"}, {"hw.lcd.height", "3088"}}));
+    EXPECT_FALSE(skinMatchesLcd({{"skin.name", "1440x3088"},
+                                 {"hw.lcd.width", "-1440"},
+                                 {"hw.lcd.height", "3088"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_negativeLcdHeight) {
+    EXPECT_FALSE(skinMatchesLcd(
+            {{"hw.lcd.width", "1440"}, {"hw.lcd.height", "-3088"}}));
+    EXPECT_FALSE(skinMatchesLcd({{"skin.name", "1440x3088"},
+                                 {"hw.lcd.width", "1440"},
+                                 {"hw.lcd.height", "-3088"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_zeroLcdSize) {
+    EXPECT_FALSE(
+            skinMatchesLcd({{"hw.lcd.width", "0"}, {"hw.lcd.height", "3088"}}));
+    EXPECT_FALSE(
+            skinMatchesLcd({{"hw.lcd.width", "1440"}, {"hw.lcd.height", "0"}}));
+    EXPECT_FALSE(
+            skinMatchesLcd({{"hw.lcd.width", "0"}, {"hw.lcd.height", "0"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_lcdWidthWithoutHeight) {
+    // A config.ini whose hw.lcd.height line is missing its "=".
+    EXPECT_FALSE(skinMatchesLcd({{"skin.name", "1080x720"},
+                                 {"skin.path", "1080x720"},
+                                 {"hw.lcd.width", "1080"}}));
+    EXPECT_FALSE(skinMatchesLcd({{"hw.lcd.width", "1080"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_lcdHeightWithoutWidth) {
+    EXPECT_FALSE(skinMatchesLcd({{"hw.lcd.height", "3088"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_partialLcdSizeWithOnDiskSkin) {
+    AvdInfo* info = newAvdWithConfig({{"hw.lcd.width", "1440"}});
+    EXPECT_FALSE(avdInfo_checkSkinMatchesLcd(info, nullptr, "pixel_7",
+                                             "/dummy/sdk/skins", false));
+    avdInfo_free(info);
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_partialLcdSizeIsNotCheckedWithSkinOption) {
+    EXPECT_TRUE(skinMatchesLcd({{"hw.lcd.width", "1080"}}, "1080x720"));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_displaylessIsNotChecked) {
+    EXPECT_TRUE(skinMatchesLcd({{"skin.name", "1080x2400"},
+                                {"hw.displayless", "yes"},
+                                {"hw.lcd.width", "1440"},
+                                {"hw.lcd.height", "3088"}}));
+    EXPECT_TRUE(skinMatchesLcd(
+            {{"hw.displayless", "yes"}, {"hw.lcd.width", "1440"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_skinFromLcdSize) {
+    // Without skin.name, avdInfo_getSkinInfo() builds the skin from hw.lcd.*.
+    EXPECT_TRUE(skinMatchesLcd(
+            {{"hw.lcd.width", "1440"}, {"hw.lcd.height", "3088"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_foldRotatedGenericSkin) {
+    // sdklib's generic skin for pixel_9_pro_fold is the 2076x2152 LCD rotated.
+    EXPECT_TRUE(skinMatchesLcd({{"hw.device.name", "pixel_9_pro_fold"},
+                                {"skin.name", "2152x2076"},
+                                {"skin.path", "2152x2076"},
+                                {"hw.lcd.width", "2076"},
+                                {"hw.lcd.height", "2152"}}));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_foldOnDiskSkinIsNotChecked) {
+    // An on-disk fold skin resolves to its default/ subdirectory.
+    AvdInfo* info = newAvdWithConfig({{"hw.device.name", "pixel_fold"},
+                                      {"hw.lcd.width", "2208"},
+                                      {"hw.lcd.height", "1840"}});
+    EXPECT_TRUE(avdInfo_checkSkinMatchesLcd(
+            info, nullptr, "default", "/dummy/sdk/skins/pixel_fold", false));
+    avdInfo_free(info);
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_foldNumericSkinIsReplacedByLcdSize) {
+    // main.cpp replaces a numeric skin with the hw.lcd size when
+    // android_foldable_is_pixel_fold() is true, so a mismatched one boots.
+    const std::initializer_list<ConfigEntry> config = {
+            {"hw.device.name", "pixel_fold"},
+            {"skin.name", "1080x2400"},
+            {"hw.lcd.width", "2208"},
+            {"hw.lcd.height", "1840"}};
+    EXPECT_TRUE(skinMatchesLcd(config, nullptr, true));
+    EXPECT_FALSE(skinMatchesLcd(config, nullptr, false));
+}
+
+TEST(AvdInfoTest, skinMatchesLcd_foldPartialLcdSizeIsChecked) {
+    EXPECT_FALSE(skinMatchesLcd({{"hw.device.name", "pixel_fold"},
+                                 {"skin.name", "1080x2400"},
+                                 {"hw.lcd.width", "2208"}},
+                                nullptr, true));
 }
