@@ -20,7 +20,30 @@ EXPORTS
     audio_be_add_capture
     audio_be_by_name
     audio_be_del_capture
+    audio_buffer_bytes
+    audio_buffer_frames
+    audio_buffer_samples
+    audio_generic_buffer_get_free
+    audio_generic_get_buffer_in
+    audio_generic_get_buffer_out
+    audio_generic_initialize_buffer_in
+    audio_generic_initialize_buffer_out
+    audio_generic_put_buffer_in
+    audio_generic_put_buffer_out
+    audio_generic_read
+    audio_generic_run_buffer_in
+    audio_generic_run_buffer_out
+    audio_generic_write
     audio_get_default_audio_be
+    audio_get_pdo_in
+    audio_get_pdo_out
+    audio_pcm_info_clear_buf
+    audio_pcm_init_info
+    audio_rate_add_bytes
+    audio_rate_get_bytes
+    audio_rate_peek_bytes
+    audio_rate_start
+    audiodev_to_audsettings
     bdrv_all_find_vmstate_bs
     bdrv_snapshot_list
     blk_commit_all

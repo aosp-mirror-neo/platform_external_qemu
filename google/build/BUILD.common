@@ -82,6 +82,8 @@ cc_library(
 cc_library(
     name = "qemu-headers",
     hdrs = [
+        "audio/audio_int.h",
+        "audio/mixeng.h",
         "config-poison.h",
         "generate_shared_QAPI_source_files",
         "google/drivers/hw/acpi/goldfish_defs.h",
