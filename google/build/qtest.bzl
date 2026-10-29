@@ -13,10 +13,13 @@ QTEST_LOCAL_DEFINES = [
 ]
 
 # libqtest cannot drive qemu-system-<arch> on Windows (spawning and waiting on
-# the child process fails), so the qtest stack is built and run on Linux and
-# macOS only; Windows builds skip these targets.
+# the child process fails) or under ThreadSanitizer (libqtest links libqemuutil,
+# whose pthread_atfork handler rcu_init_child spawns a thread after fork, and
+# pregenerated config-host.h leaves CONFIG_TSAN undefined so coroutine-ucontext
+# omits __tsan_switch_to_fiber annotations; see b/579559726).
 QTEST_TARGET_COMPATIBLE_WITH = select({
     "@platforms//os:windows": ["@platforms//:incompatible"],
+    "@qemu//:tsan": ["@platforms//:incompatible"],
     "//conditions:default": [],
 })
 

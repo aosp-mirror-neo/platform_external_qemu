@@ -397,6 +397,12 @@ config_setting(
     flag_values = {":trace_backend": "goldfish"},
 )
 
+config_setting(
+    name = "tsan",
+    values = {"features": "tsan"},
+    visibility = ["//visibility:public"],
+)
+
 TRACE_BACKEND = select({
     ":trace_log_enabled": "log",
     ":trace_simple_enabled": "simple",
