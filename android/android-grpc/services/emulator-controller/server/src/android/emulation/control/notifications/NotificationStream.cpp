@@ -72,13 +72,16 @@ std::optional<Notification> NotificationStream::getDisplayNotificationEvent() {
         // Workaround for the fact that MultiDisplay is currently not atomic.
         // This will make sure we will not include partially created/configured
         // displays in the event (See b/290831895).
+        //
+        // Note: Do not filter by getDisplayColorBuffer() / (cb != 0) here
+        // (see b/572946648). When a secondary display is added or modified via
+        // setDisplayConfigurations, its color buffer is 0 until the guest
+        // allocates and binds a frame (and can stay 0 on minigbm or unrendered
+        // virtual displays). Requiring cb != 0 excludes the newly configured
+        // display from DisplayConfigurationsChangedNotification, causing
+        // UniqueEventStreamWriter to drop the notification as a duplicate.
         bool isPartiallyCreatedEvent = width == 0 && height == 0 && dpi == 0;
-
-        uint32_t cb = 0;
-        mAgents->multi_display->getDisplayColorBuffer(i, &cb);
-        bool isActive = (i == 0) || (cb != 0);
-
-        if (receivedDisplayStatus && !isPartiallyCreatedEvent && isActive) {
+        if (receivedDisplayStatus && !isPartiallyCreatedEvent) {
             auto cfg = displayConfig->add_displays();
             cfg->set_width(width);
             cfg->set_height(height);
