@@ -39,9 +39,19 @@ android_add_test(
   SOURCE_DIR test
   SRC android/emulation/control/keyboard/EventSender_unittest.cpp
       android/emulation/control/logcat/LogcatParser_unittest.cpp
+      android/emulation/control/notifications/NotificationStream_unittest.cpp
       android/emulation/control/utils/SharedMemoryLibrary_unittest.cpp
-  DEPS android-emu-base android-emu-base-headers emulator_controller-server-impl
-       emulator_controller-service gmock_main grpc++)
+  DEPS android-emu
+       android-emu-agents
+       android-emu-base
+       android-emu-base-headers
+       android-grpc-event-waiter
+       android-grpc-utils
+       emulator_controller-server-impl
+       emulator_controller-service
+       gmock_main
+       grpc++
+       qemu-host-common-headers)
 target_include_directories(emulator_controller-server-impl_unittest
                            PRIVATE src test)
 
