@@ -200,6 +200,8 @@ EXPORTS
     OnOffAuto_lookup
     pci_address_space
     pci_address_space_io
+    pci_device_load
+    pci_device_save
     pci_register_bar
     pci_set_irq
     pci_std_vga_mmio_region_init
