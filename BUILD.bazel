@@ -6,7 +6,7 @@ load("@goldfish_build//rules:windows_resources.bzl", "windows_manifest_resource"
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "objc_library")
 load("@rules_license//rules:license.bzl", "license")
 load("@rules_python//python:defs.bzl", "py_binary")
-load("google/build/cc_interface_binary.bzl", "cc_interface_binary")
+load("google/build/cc_interface_binary.bzl", "cc_headers_only", "cc_interface_binary")
 load(
     "google/build/qtest.bzl",
     "QTEST_COPTS",
@@ -287,8 +287,8 @@ cc_library(
         "//conditions:default": [],
     }),
     deps = [
-        "@glib//glib:glib_import",
-        "@glib//gmodule:gmodule_import",
+        "@glib//glib",
+        "@glib//gmodule",
         "@libslirp//:headers",
     ] + select({
         "@platforms//os:windows": ["@aemu//windows:compat-hdrs"],
@@ -298,6 +298,24 @@ cc_library(
     }),
 )
 
+# Provides GLib and GModule headers and compile defines without propagating
+# static archive link inputs, so shared-library plugins (such as libgoldfish)
+# resolve GLib symbols from the host qemu-system-* executable and avoid ODR
+# violations across dynamic library boundaries.
+cc_headers_only(
+    name = "glib-headers",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@glib//glib",
+        "@glib//gmodule",
+    ],
+)
+
+cc_headers_only(
+    name = "qemu-headers-only",
+    deps = [":qemu-headers"],
+)
+
 cc_library(
     name = "qemu-headers-exported",
     defines = ["QEMU_HEADERS_EXPORT"] + select({
@@ -305,7 +323,7 @@ cc_library(
         "//conditions:default": [],
     }),
     visibility = ["//visibility:public"],
-    deps = [":qemu-headers"],
+    deps = [":qemu-headers-only"],
 )
 
 cc_library(
@@ -782,10 +800,6 @@ cc_binary(
         ],
         "//conditions:default": [],
     }),
-    dynamic_deps = [
-        "@glib//glib:glib_shared",
-        "@glib//gmodule:gmodule_shared",
-    ],
     # buildifier: leave-alone
     includes = [
         ".",
@@ -820,12 +834,12 @@ cc_binary(
         "@goldfish_build//platforms:is_windows_x64": [
             ":qemu-img_manifest_rc",
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             ":qemu-img_manifest_rc",
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_linux_x64": [
             "//google/compat/linux:compat",
@@ -848,7 +862,7 @@ cc_binary(
         ":libqom",
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
         "@zlib",
     ],
 )
@@ -913,10 +927,6 @@ cc_interface_binary(
         ],
         "//conditions:default": [],
     }),
-    dynamic_deps = [
-        "@glib//glib:glib_shared",
-        "@glib//gmodule:gmodule_shared",
-    ],
     # buildifier: leave-alone
     includes = [
         ".",
@@ -965,12 +975,12 @@ cc_interface_binary(
     deps = ["//google/rutabaga:rutabaga_ffi_lazy"] + select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             ":qemu-system-aarch64_manifest_rc",
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_linux_x64": [
             "//google/compat/linux:compat",
@@ -1002,7 +1012,7 @@ cc_interface_binary(
         ":qemu-headers",
         ":trace_backend_deps",
         "@dtc//:libfdt",
-        "@glib//glib:glib_import",
+        "@glib//glib",
         "@libslirp",
         "@pixman//:pixman-1",
         "@pixman//:pixman_simd",
@@ -1070,10 +1080,6 @@ cc_interface_binary(
         ],
         "//conditions:default": [],
     }),
-    dynamic_deps = [
-        "@glib//glib:glib_shared",
-        "@glib//gmodule:gmodule_shared",
-    ],
     # buildifier: leave-alone
     includes = [
         ".",
@@ -1122,11 +1128,11 @@ cc_interface_binary(
         "@goldfish_build//platforms:is_windows_x64": [
             ":qemu-system-x86_64_manifest_rc",
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_linux_x64": [
             "//google/compat/linux:compat",
@@ -1158,7 +1164,7 @@ cc_interface_binary(
         ":qemu-headers",
         ":trace_backend_deps",
         "@dtc//:libfdt",
-        "@glib//glib:glib_import",
+        "@glib//glib",
         "@libslirp",
         "@pixman//:pixman-1",
         "@pixman//:pixman_simd",
@@ -1259,16 +1265,16 @@ cc_library(
     deps = [
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
     ] + select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_linux_x64": ["//google/compat/linux:compat"],
@@ -1470,16 +1476,16 @@ cc_library(
     deps = [
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
         "@zlib",
     ] + select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_linux_x64": ["//google/compat/linux:compat"],
         "//conditions:default": [],
@@ -1607,12 +1613,12 @@ cc_library(
     deps = select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_linux_x64": [
@@ -1628,7 +1634,7 @@ cc_library(
     }) + [
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
     ],
     alwayslink = 1,
 )
@@ -1763,16 +1769,16 @@ cc_library(
     deps = [
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
     ] + select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_linux_x64": ["//google/compat/linux:compat"],
@@ -1885,12 +1891,12 @@ cc_library(
     deps = select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_linux_x64": [
@@ -1907,7 +1913,7 @@ cc_library(
         ":libqemuutil",
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
     ],
     alwayslink = 1,
 )
@@ -2065,11 +2071,11 @@ cc_library(
     ] + select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_linux_x64": [
             "//google/compat/linux:compat",
@@ -2080,7 +2086,7 @@ cc_library(
     }) + [
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
         "@libslirp",
         "@pixman//:pixman-1",
         "@pixman//:pixman_simd",
@@ -2233,16 +2239,16 @@ cc_library(
     deps = [
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
     ] + select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_linux_x64": ["//google/compat/linux:compat"],
@@ -2331,16 +2337,16 @@ cc_library(
     deps = [
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
     ] + select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_linux_x64": ["//google/compat/linux:compat"],
@@ -2449,16 +2455,16 @@ cc_library(
     deps = [
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
     ] + select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_linux_x64": ["//google/compat/linux:compat"],
@@ -2569,12 +2575,12 @@ cc_library(
     deps = select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_linux_x64": [
@@ -2591,7 +2597,7 @@ cc_library(
         ":libqemuutil",
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
     ],
     alwayslink = 1,
 )
@@ -2706,16 +2712,16 @@ cc_library(
     deps = [
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
     ] + select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_linux_x64": ["//google/compat/linux:compat"],
@@ -2804,16 +2810,16 @@ cc_library(
     deps = [
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
     ] + select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_linux_x64": ["//google/compat/linux:compat"],
@@ -3175,12 +3181,12 @@ cc_library(
         "@goldfish_build//platforms:is_windows_x64": [
             ":libsystem_qemu-system-aarch64",
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             ":libsystem_qemu-system-aarch64",
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@platforms//os:macos": [":libsystem_qemu-system-aarch64-unsigned"],
         "@goldfish_build//platforms:is_linux_x64": [
@@ -3205,7 +3211,7 @@ cc_library(
         ":qemu-headers",
         ":trace_backend_deps",
         "@dtc//:libfdt",
-        "@glib//glib:glib_import",
+        "@glib//glib",
         "@libslirp",
         "@pixman//:pixman-1",
         "@pixman//:pixman_simd",
@@ -3647,12 +3653,12 @@ cc_library(
         "@goldfish_build//platforms:is_windows_x64": [
             ":libsystem_qemu-system-x86_64",
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             ":libsystem_qemu-system-x86_64",
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@platforms//os:macos": [":libsystem_qemu-system-x86_64-unsigned"],
         "@goldfish_build//platforms:is_linux_x64": [
@@ -3675,7 +3681,7 @@ cc_library(
         ":qemu-headers",
         ":trace_backend_deps",
         "@dtc//:libfdt",
-        "@glib//glib:glib_import",
+        "@glib//glib",
         "@libslirp",
         "@pixman//:pixman-1",
         "@pixman//:pixman_simd",
@@ -3813,12 +3819,12 @@ cc_library(
     deps = select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@platforms//os:macos": [":internal_qemuaudio_darwin"],
@@ -3831,7 +3837,7 @@ cc_library(
     }) + [
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
     ],
     alwayslink = 1,
 )
@@ -4756,12 +4762,12 @@ cc_library(
     deps = select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_linux_x64": [
@@ -4777,7 +4783,7 @@ cc_library(
     }) + [
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
         "@pixman//:pixman-1",
         "@pixman//:pixman_simd",
     ],
@@ -4876,16 +4882,16 @@ cc_library(
     deps = [
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
     ] + select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_linux_x64": ["//google/compat/linux:compat"],
@@ -4985,16 +4991,16 @@ cc_library(
     deps = [
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
     ] + select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
             "@zlib",
         ],
         "@goldfish_build//platforms:is_linux_x64": ["//google/compat/linux:compat"],
@@ -5309,11 +5315,11 @@ cc_library(
     ] + select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_linux_x64": [
             "//google/compat/linux:compat",
@@ -5324,7 +5330,7 @@ cc_library(
     }) + [
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
         "@libslirp",
         "@pixman//:pixman-1",
         "@pixman//:pixman_simd",
@@ -6867,11 +6873,11 @@ cc_library(
     deps = ["//google/rutabaga:rutabaga_ffi_lazy"] + select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_linux_x64": [
             "//google/compat/linux:compat",
@@ -6889,7 +6895,7 @@ cc_library(
         ":qemu-headers",
         ":trace_backend_deps",
         "@dtc//:libfdt",
-        "@glib//glib:glib_import",
+        "@glib//glib",
         "@libslirp",
         "@pixman//:pixman-1",
         "@pixman//:pixman_simd",
@@ -8115,7 +8121,7 @@ cc_library(
         ":trace_backend_deps",
         "//google/rutabaga:rutabaga_ffi_lazy",
         "@dtc//:libfdt",
-        "@glib//glib:glib_import",
+        "@glib//glib",
         "@libslirp",
         "@pixman//:pixman-1",
         "@pixman//:pixman_simd",
@@ -9322,11 +9328,11 @@ cc_library(
     deps = ["//google/rutabaga:rutabaga_ffi_lazy"] + select({
         "@goldfish_build//platforms:is_windows_x64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_windows_aarch64": [
             "//google/compat/windows:compat",
-            "@glib//gmodule:gmodule_import",
+            "@glib//gmodule",
         ],
         "@goldfish_build//platforms:is_linux_x64": [
             "//google/compat/linux:compat",
@@ -9344,7 +9350,7 @@ cc_library(
         ":qemu-headers",
         ":trace_backend_deps",
         "@dtc//:libfdt",
-        "@glib//glib:glib_import",
+        "@glib//glib",
         "@libslirp",
         "@pixman//:pixman-1",
         "@pixman//:pixman_simd",
@@ -10208,7 +10214,7 @@ cc_library(
         ":trace_backend_deps",
         "//google/rutabaga:rutabaga_ffi_lazy",
         "@dtc//:libfdt",
-        "@glib//glib:glib_import",
+        "@glib//glib",
         "@libslirp",
         "@pixman//:pixman-1",
         "@pixman//:pixman_simd",
@@ -13788,7 +13794,7 @@ objc_library(
     deps = [
         ":qemu-headers",
         ":trace_backend_deps",
-        "@glib//glib:glib_import",
+        "@glib//glib",
     ],
     alwayslink = 1,
 )
@@ -13829,7 +13835,7 @@ objc_library(
         ":trace_backend_deps",
         "//google/rutabaga:rutabaga_ffi_lazy",
         "@dtc//:libfdt",
-        "@glib//glib:glib_import",
+        "@glib//glib",
         "@libslirp",
         "@pixman//:pixman-1",
         "@pixman//:pixman_simd",
@@ -13874,7 +13880,7 @@ objc_library(
         ":trace_backend_deps",
         "//google/rutabaga:rutabaga_ffi_lazy",
         "@dtc//:libfdt",
-        "@glib//glib:glib_import",
+        "@glib//glib",
         "@libslirp",
         "@pixman//:pixman-1",
         "@pixman//:pixman_simd",
