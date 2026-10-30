@@ -100,6 +100,64 @@ EXPORTS
     error_setg_internal
     error_setg_win32_internal
     freq_to_str
+    g_assertion_message
+    g_assertion_message_expr
+    g_build_filename
+    g_clear_error
+    g_clear_pointer
+    g_dir_close
+    g_dir_open
+    g_dir_open_utf8
+    g_dir_read_name
+    g_dir_read_name_utf8
+    g_error_free
+    g_file_test
+    g_file_test_utf8
+    g_free
+    g_free_sized
+    g_getenv
+    g_getenv_utf8
+    g_log
+    g_logv
+    g_malloc
+    g_malloc0
+    g_malloc0_n
+    g_malloc_n
+    g_mkdir_with_parents
+    g_module_close
+    g_module_error
+    g_module_open
+    g_module_open_full
+    g_module_open_utf8
+    g_module_symbol
+    g_once_impl
+    g_once_init_enter
+    g_once_init_enter_pointer
+    g_once_init_leave
+    g_once_init_leave_pointer
+    g_path_get_dirname
+    g_realloc
+    g_realloc_n
+    g_remove
+    g_rename
+    g_return_if_fail_warning
+    g_rmdir
+    g_str_equal
+    g_str_hash
+    g_strcmp0
+    g_strdup
+    g_strdup_printf
+    g_strdup_vprintf
+    g_strerror
+    g_string_append
+    g_string_append_printf
+    g_string_free
+    g_string_insert_c
+    g_string_new
+    g_try_malloc
+    g_try_malloc0
+    g_unlink
+    g_utf16_to_utf8
     get_ptr_rcu_reader
     get_qemu_system_address_space
     graphic_console_init

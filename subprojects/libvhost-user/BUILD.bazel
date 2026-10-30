@@ -76,8 +76,8 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "vhost-user",
-        "@glib//glib:glib_import",
-        "@glib//gmodule:gmodule_import",
+        "@glib//glib",
+        "@glib//gmodule",
     ] + select({
         "@goldfish_build//platforms:is_linux_x64": ["//google/compat/linux:compat"],
         "//conditions:default": [],

@@ -36,10 +36,6 @@ def qemu_qtest_goldfish_stub(name, **kwargs):
         testonly = True,
         srcs = ["@qemu//:google/system/qtest_goldfish_stub.c"],
         copts = QTEST_COPTS,
-        dynamic_deps = [
-            "@glib//glib:glib_shared",
-            "@glib//gmodule:gmodule_shared",
-        ],
         linkopts = select({
             "@platforms//os:macos": ["-undefined dynamic_lookup"],
             "//conditions:default": [],
@@ -50,9 +46,7 @@ def qemu_qtest_goldfish_stub(name, **kwargs):
         visibility = visibility,
         deps = [
             "@qemu//:aemu_func_defs",
-            "@qemu//:qemu-headers",
-            "@glib//glib:glib_import",
-            "@glib//gmodule:gmodule_import",
+            "@qemu//:qemu-headers-exported",
         ] + select({
             # //google/compat/linux:compat provides x86_64 glibc 2.17 shims
             # via @gcc_lib//:libutil and is not used on linux_aarch64.
@@ -132,10 +126,6 @@ def qemu_qtest(
         args = args,
         copts = QTEST_COPTS + copts,
         data = test_data + data,
-        dynamic_deps = [
-            "@glib//glib:glib_shared",
-            "@glib//gmodule:gmodule_shared",
-        ],
         env = test_env,
         linkopts = select({
             "@platforms//os:macos": [

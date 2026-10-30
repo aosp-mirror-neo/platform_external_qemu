@@ -68,8 +68,7 @@ cc_library(
     ],
     defines = ["RUTABAGA_GFX_FFI_UNSTABLE"],
     implementation_deps = [
-        "@glib//glib:glib_import",
-        "@glib//gmodule:gmodule_import",
+        "//:glib-headers",
     ],
     linkstatic = True,
     strip_include_prefix = "include",
@@ -152,10 +151,6 @@ _FAKE_NO_GOLDFISH_RLOCATION = select({
         size = "small",
         srcs = ["rutabaga_ffi_lazy_test.c"],
         data = data,
-        dynamic_deps = [
-            "@glib//glib:glib_shared",
-            "@glib//gmodule:gmodule_shared",
-        ],
         env = {
             "RUTABAGA_LAZY_TEST_SCENARIO": scenario,
         } | rlocation,
@@ -164,8 +159,8 @@ _FAKE_NO_GOLDFISH_RLOCATION = select({
         deps = [
             ":rutabaga_ffi_headers",
             ":rutabaga_ffi_lazy",
-            "@glib//glib:glib_import",
-            "@glib//gmodule:gmodule_import",
+            "@glib//glib",
+            "@glib//gmodule",
         ],
     )
     for scenario, data, rlocation in [

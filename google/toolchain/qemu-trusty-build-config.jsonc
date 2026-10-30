@@ -71,7 +71,7 @@
       },
       "gmodule": {
         "lib_type": "bazel",
-        "bazel_target": "@glib//gmodule:gmodule_import",
+        "bazel_target": "@glib//gmodule",
         "version": "2.77.2",
         "shim": {
           "name": "gmodule-export-2.0",
@@ -81,7 +81,7 @@
       },
       "gobject": {
         "lib_type": "bazel",
-        "bazel_target": "@glib//gobject:gobject_import",
+        "bazel_target": "@glib//gobject",
         "version": "2.77.2",
         "shim": {
           "name": "gobject-2.0",
@@ -90,7 +90,7 @@
       },
       "gio": {
         "lib_type": "bazel",
-        "bazel_target": "@glib//gio:gio_import",
+        "bazel_target": "@glib//gio",
         "version": "2.77.2",
         "shim": {
           "name": "gio-2.0",
@@ -104,7 +104,7 @@
       },
       "glib": {
         "lib_type": "bazel",
-        "bazel_target": "@glib//glib:glib_import",
+        "bazel_target": "@glib//glib",
         "version": "2.77.2",
         "shim": {
           "name": "glib-2.0",

@@ -2,6 +2,22 @@
 
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+
+def _cc_headers_only_impl(ctx):
+    return [CcInfo(
+        compilation_context = cc_common.merge_compilation_contexts(
+            compilation_contexts = [dep[CcInfo].compilation_context for dep in ctx.attr.deps],
+        ),
+    )]
+
+cc_headers_only = rule(
+    implementation = _cc_headers_only_impl,
+    attrs = {
+        "deps": attr.label_list(providers = [CcInfo]),
+    },
+)
 
 def cc_interface_binary(
         name,
