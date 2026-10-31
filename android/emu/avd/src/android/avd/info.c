@@ -1015,6 +1015,13 @@ static void _avdInfo_extractBuildProperties(AvdInfo* i) {
     }
 
     i->flavor = propertyFile_getAvdFlavor(i->buildProperties);
+    if (i->flavor == AVD_OTHER && i->configIni) {
+        char* tagId = iniFile_getString(i->configIni, TAG_ID, NULL);
+        if (tagId) {
+            i->flavor = avdFlavor_fromTagId(tagId);
+            AFREE(tagId);
+        }
+    }
 
     i->isGoogleApis = propertyFile_isGoogleApis(i->buildProperties);
     i->isUserBuild = propertyFile_isUserBuild(i->buildProperties);
