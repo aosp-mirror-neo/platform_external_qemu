@@ -614,3 +614,16 @@ TEST(AvdInfoTest, flavor_fallback_to_tag_id) {
     EXPECT_EQ(AVD_OTHER, avdInfo_getAvdFlavor(otherInfo));
     avdInfo_free(otherInfo);
 }
+
+TEST(AvdInfoTest, is_generic_foldable) {
+    EXPECT_TRUE(avdInfo_isGenericFoldable("foldable_4_3"));
+    EXPECT_TRUE(avdInfo_isGenericFoldable("foldable_1_1"));
+
+    EXPECT_FALSE(avdInfo_isGenericFoldable("pixel_fold"));
+    EXPECT_FALSE(avdInfo_isGenericFoldable("pixel_10_pro_fold"));
+    EXPECT_FALSE(avdInfo_isGenericFoldable("7.6in Foldable"));
+    EXPECT_FALSE(avdInfo_isGenericFoldable("FOLDABLE_4_3"));
+    EXPECT_FALSE(avdInfo_isGenericFoldable("foldable_4_3_测试_🚀_é"));
+    EXPECT_FALSE(avdInfo_isGenericFoldable(""));
+    EXPECT_FALSE(avdInfo_isGenericFoldable(nullptr));
+}

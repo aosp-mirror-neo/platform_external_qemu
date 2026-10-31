@@ -513,6 +513,12 @@ int avdInfo_maxMultiDisplayEntries();
 /* Whether the skin has corresponding system overlay */
 bool avdInfo_skinHasOverlay(const char* skinName);
 
+/* Whether |deviceName| is one of the generic foldable profiles, "Foldable (4:3
+ * inner display)" or "Foldable (1:1 inner display)". System images ship no
+ * device-specific assets for them, so they use the generic Pixel Fold
+ * device-state configuration without any device overlay. */
+bool avdInfo_isGenericFoldable(const char* deviceName);
+
 /* the screen off timeout in miliseconds, after which the screen will be turned off
    do not delete the returned string.
  */

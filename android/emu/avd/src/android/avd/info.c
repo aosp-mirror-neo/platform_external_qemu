@@ -2272,6 +2272,13 @@ bool avdInfo_skinHasOverlay(const char* skinName) {
     return false;
 }
 
+bool avdInfo_isGenericFoldable(const char* deviceName) {
+    // b/579490561: "Foldable (4:3 inner display)" and "Foldable (1:1 inner
+    // display)" in the SDK device definitions.
+    return deviceName != NULL && (!strcmp(deviceName, "foldable_4_3") ||
+                                  !strcmp(deviceName, "foldable_1_1"));
+}
+
 /* for api >= S, turns off screen after 30 minutes to save battery
    b/216165503; leave the older api behavor unchanged for now.
 */
