@@ -119,4 +119,12 @@ BlockDriverState *bdrv_all_find_vmstate_bs(const char *vmstate_bs,
  */
 void bdrv_set_default_vmstate_node(const char *node_name);
 
+/*
+ * Returns the node named @vmstate_bs (or the default vmstate node when NULL)
+ * if it exists, has a medium and is read-only, otherwise NULL.  Such a node is
+ * skipped by the bdrv_all_* helpers, but load_snapshot() can still read the VM
+ * state from it with bdrv_snapshot_load_tmp(), which never writes.
+ */
+BlockDriverState *bdrv_find_read_only_vmstate_bs(const char *vmstate_bs);
+
 #endif
