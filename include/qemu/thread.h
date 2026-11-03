@@ -65,13 +65,19 @@ typedef void (*QemuCondWaitFunc)(QemuCond *c, QemuMutex *m, const char *f,
 typedef bool (*QemuCondTimedWaitFunc)(QemuCond *c, QemuMutex *m, int ms,
                                       const char *f, int l);
 
-extern QemuMutexLockFunc bql_mutex_lock_func;
-extern QemuMutexLockFunc qemu_mutex_lock_func;
-extern QemuMutexTrylockFunc qemu_mutex_trylock_func;
-extern QemuRecMutexLockFunc qemu_rec_mutex_lock_func;
-extern QemuRecMutexTrylockFunc qemu_rec_mutex_trylock_func;
-extern QemuCondWaitFunc qemu_cond_wait_func;
-extern QemuCondTimedWaitFunc qemu_cond_timedwait_func;
+/*
+ * Data symbols: the qemu_mutex_lock() family below reads them with
+ * qatomic_read(), so a plugin DLL on Windows must import them as variables
+ * (GOLDFISH_EXPORTED_VARIABLE) rather than bind them to a function import
+ * thunk, which would make the first lock execute the thunk's code bytes.
+ */
+extern GOLDFISH_EXPORTED_VARIABLE QemuMutexLockFunc bql_mutex_lock_func;
+extern GOLDFISH_EXPORTED_VARIABLE QemuMutexLockFunc qemu_mutex_lock_func;
+extern GOLDFISH_EXPORTED_VARIABLE QemuMutexTrylockFunc qemu_mutex_trylock_func;
+extern GOLDFISH_EXPORTED_VARIABLE QemuRecMutexLockFunc qemu_rec_mutex_lock_func;
+extern GOLDFISH_EXPORTED_VARIABLE QemuRecMutexTrylockFunc qemu_rec_mutex_trylock_func;
+extern GOLDFISH_EXPORTED_VARIABLE QemuCondWaitFunc qemu_cond_wait_func;
+extern GOLDFISH_EXPORTED_VARIABLE QemuCondTimedWaitFunc qemu_cond_timedwait_func;
 
 /* convenience macros to bypass the profiler */
 #define qemu_mutex_lock__raw(m)                         \

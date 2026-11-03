@@ -288,7 +288,9 @@ EXPORTS
     qemu_cond_destroy
     qemu_cond_init
     qemu_cond_signal
+    qemu_cond_timedwait_func
     qemu_cond_wait_bql
+    qemu_cond_wait_func
     qemu_console_get_head
     qemu_console_get_index
     qemu_console_get_name
@@ -347,6 +349,7 @@ EXPORTS
     qemu_mutex_destroy
     qemu_mutex_init
     qemu_mutex_lock_func
+    qemu_mutex_trylock_func
     qemu_mutex_unlock_impl
     qemu_mutex_unlock_impl
     qemu_new_net_client
