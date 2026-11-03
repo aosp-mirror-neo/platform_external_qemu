@@ -1,6 +1,7 @@
-; This contains all the symbols that are needed for the plugins
-; Whenever you require a function from qemu in one of your drivers
-; you will have to make sure it is exported
+; This contains all the symbols that are needed for the plugins.
+; Whenever you require a function or variable from qemu in one of your
+; drivers, you will have to make sure it is exported here.
+; Symbols only available on Windows should be suffixed with `; windows-only`.
 
 LIBRARY qemu-system-x86_64.exe
 EXPORTS
@@ -103,7 +104,7 @@ EXPORTS
     error_reportf_err
     error_setg_errno_internal
     error_setg_internal
-    error_setg_win32_internal
+    error_setg_win32_internal ; windows-only
     freq_to_str
     g_assertion_message
     g_assertion_message_expr
@@ -112,16 +113,16 @@ EXPORTS
     g_clear_pointer
     g_dir_close
     g_dir_open
-    g_dir_open_utf8
+    g_dir_open_utf8 ; windows-only
     g_dir_read_name
-    g_dir_read_name_utf8
+    g_dir_read_name_utf8 ; windows-only
     g_error_free
     g_file_test
-    g_file_test_utf8
+    g_file_test_utf8 ; windows-only
     g_free
     g_free_sized
     g_getenv
-    g_getenv_utf8
+    g_getenv_utf8 ; windows-only
     g_log
     g_logv
     g_malloc
@@ -133,7 +134,7 @@ EXPORTS
     g_module_error
     g_module_open
     g_module_open_full
-    g_module_open_utf8
+    g_module_open_utf8 ; windows-only
     g_module_symbol
     g_once_impl
     g_once_init_enter
@@ -267,15 +268,33 @@ EXPORTS
     qapi_enum_lookup
     qapi_event_send_device_deleted
     qapi_free_ChardevBackend
-    qapi_free_ChardevBackend
     qapi_free_SocketAddress
     qbase64_decode
     qcrypto_tls_creds_check_endpoint
     qdev_find_recursive
+    qdev_prop_array
+    qdev_prop_bit
+    qdev_prop_bit64
+    qdev_prop_bool
+    qdev_prop_int32
+    qdev_prop_int64
+    qdev_prop_link
+    qdev_prop_on_off_auto
+    qdev_prop_on_off_auto_bit64
+    qdev_prop_size
+    qdev_prop_size32
+    qdev_prop_string
+    qdev_prop_uint16
+    qdev_prop_uint32
+    qdev_prop_uint64
+    qdev_prop_uint64_checkmask
+    qdev_prop_uint8
+    qdev_prop_usize
     qdev_realize
-    qemu_add_polling_cb
+    qemu_add_data_dir
+    qemu_add_polling_cb ; windows-only
     qemu_add_vm_change_state_handler
-    qemu_add_wait_object
+    qemu_add_wait_object ; windows-only
     qemu_bh_cancel
     qemu_bh_delete
     qemu_bh_new_full
@@ -287,7 +306,7 @@ EXPORTS
     qemu_clock_get_ns
     qemu_clock_notify
     qemu_clock_run_timers
-    qemu_close_wrap
+    qemu_close_wrap ; windows-only
     qemu_co_sleep_ns_wakeable
     qemu_cond_destroy
     qemu_cond_init
@@ -310,9 +329,9 @@ EXPORTS
     qemu_create_displaysurface_pixman
     qemu_del_net_client
     qemu_del_nic
-    qemu_del_polling_cb
+    qemu_del_polling_cb ; windows-only
     qemu_del_vm_change_state_handler
-    qemu_del_wait_object
+    qemu_del_wait_object ; windows-only
     qemu_display_register
     qemu_displaysurface_set_share_handle
     qemu_edid_generate
@@ -335,8 +354,8 @@ EXPORTS
     qemu_get_subqueue
     qemu_get_thread_id
     qemu_get_virtqueue_element
+    qemu_goldfish_set_trace_callback
     qemu_guest_random_seed_thread_part2
-    qemu_in_coroutine
     qemu_in_coroutine
     qemu_in_vcpu_thread
     qemu_input_event_send_key_delay
@@ -351,7 +370,6 @@ EXPORTS
     qemu_mutex_destroy
     qemu_mutex_init
     qemu_mutex_lock_func
-    qemu_mutex_unlock_impl
     qemu_mutex_unlock_impl
     qemu_new_net_client
     qemu_new_nic
@@ -389,8 +407,8 @@ EXPORTS
     qemu_thread_create
     qemu_thread_get_self
     qemu_unregister_reset
-    qemu_win32_map_alloc
-    qemu_win32_map_free
+    qemu_win32_map_alloc ; windows-only
+    qemu_win32_map_free ; windows-only
     qio_channel_add_watch_source
     qio_channel_create_watch
     qio_channel_has_feature
@@ -536,6 +554,32 @@ EXPORTS
     vm_start
     vm_stop
     vmstate_check_only_migratable
+    vmstate_info_bitmap
+    vmstate_info_bool
+    vmstate_info_buffer
+    vmstate_info_cpudouble
+    vmstate_info_fd
+    vmstate_info_gtree
+    vmstate_info_int16
+    vmstate_info_int32
+    vmstate_info_int32_equal
+    vmstate_info_int32_le
+    vmstate_info_int64
+    vmstate_info_int8
+    vmstate_info_nullptr
+    vmstate_info_qlist
+    vmstate_info_qtailq
+    vmstate_info_timer
+    vmstate_info_tmp
+    vmstate_info_uint16
+    vmstate_info_uint16_equal
+    vmstate_info_uint32
+    vmstate_info_uint32_equal
+    vmstate_info_uint64
+    vmstate_info_uint64_equal
+    vmstate_info_uint8
+    vmstate_info_uint8_equal
+    vmstate_info_unused_buffer
     vmstate_load_state
     vmstate_register_with_alias_id
     vmstate_save_state
