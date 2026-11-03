@@ -9,6 +9,7 @@ android_add_library(TARGET android-emu-protos SHARED LICENSE Apache-2.0)
 
 if(WINDOWS_MSVC_X86_64)
   protobuf_generate_with_plugin(
+    APPEND_PATH
     TARGET android-emu-protos
     PROTOS automation.proto
            crash_info.proto
@@ -21,7 +22,7 @@ if(WINDOWS_MSVC_X86_64)
            route.proto
            sensor_session.proto
            sim_access_rules.proto
-           snapshot.proto
+           ${AEMU_PROTO_DIR}/services/snapshot/snapshot.proto
            snapshot_deps.proto
            VehicleHalProto.proto
            verified_boot_config.proto
@@ -37,6 +38,7 @@ if(WINDOWS_MSVC_X86_64)
                              PUBLIC AEMU_PROTOS=__declspec\(dllimport\))
 else()
   protobuf_generate_with_plugin(
+    APPEND_PATH
     TARGET android-emu-protos
     PROTOS automation.proto
            crash_info.proto
@@ -49,7 +51,7 @@ else()
            route.proto
            sensor_session.proto
            sim_access_rules.proto
-           snapshot.proto
+           ${AEMU_PROTO_DIR}/services/snapshot/snapshot.proto
            snapshot_deps.proto
            VehicleHalProto.proto
            verified_boot_config.proto
