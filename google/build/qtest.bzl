@@ -13,10 +13,13 @@ QTEST_LOCAL_DEFINES = [
 ]
 
 # libqtest cannot drive qemu-system-<arch> on Windows (spawning and waiting on
-# the child process fails), so the qtest stack is built and run on Linux and
-# macOS only; Windows builds skip these targets.
+# the child process fails) or under ThreadSanitizer (libqtest links libqemuutil,
+# whose pthread_atfork handler rcu_init_child spawns a thread after fork, and
+# pregenerated config-host.h leaves CONFIG_TSAN undefined so coroutine-ucontext
+# omits __tsan_switch_to_fiber annotations; see b/579559726).
 QTEST_TARGET_COMPATIBLE_WITH = select({
     "@platforms//os:windows": ["@platforms//:incompatible"],
+    "@qemu//:tsan": ["@platforms//:incompatible"],
     "//conditions:default": [],
 })
 
@@ -36,10 +39,6 @@ def qemu_qtest_goldfish_stub(name, **kwargs):
         testonly = True,
         srcs = ["@qemu//:google/system/qtest_goldfish_stub.c"],
         copts = QTEST_COPTS,
-        dynamic_deps = [
-            "@glib//glib:glib_shared",
-            "@glib//gmodule:gmodule_shared",
-        ],
         linkopts = select({
             "@platforms//os:macos": ["-undefined dynamic_lookup"],
             "//conditions:default": [],
@@ -50,9 +49,7 @@ def qemu_qtest_goldfish_stub(name, **kwargs):
         visibility = visibility,
         deps = [
             "@qemu//:aemu_func_defs",
-            "@qemu//:qemu-headers",
-            "@glib//glib:glib_import",
-            "@glib//gmodule:gmodule_import",
+            "@qemu//:qemu-headers-exported",
         ] + select({
             # //google/compat/linux:compat provides x86_64 glibc 2.17 shims
             # via @gcc_lib//:libutil and is not used on linux_aarch64.
@@ -132,10 +129,6 @@ def qemu_qtest(
         args = args,
         copts = QTEST_COPTS + copts,
         data = test_data + data,
-        dynamic_deps = [
-            "@glib//glib:glib_shared",
-            "@glib//gmodule:gmodule_shared",
-        ],
         env = test_env,
         linkopts = select({
             "@platforms//os:macos": [

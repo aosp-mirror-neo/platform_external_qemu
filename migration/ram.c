@@ -27,6 +27,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/units.h"
 #include "qemu/cutils.h"
 #include "qemu/bitops.h"
 #include "qemu/bitmap.h"
@@ -364,6 +365,57 @@ struct RAMSrcPageRequest {
     QSIMPLEQ_ENTRY(RAMSrcPageRequest) next_req;
 };
 
+/*
+ * goldfish: background RAM prefetcher used while saving a snapshot on a
+ * swap-heavy host (Android Emulator addition, not upstream QEMU; see
+ * ram_prefetch_thread_fn()).
+ *
+ * A worker blocks on one swap-in fault at a time, so the number of workers
+ * is the number of swap-ins kept in flight ahead of the saver.
+ */
+#define PREFETCH_THREADS 4
+#define PREFETCH_CHUNK   (4 * MiB)
+#define PREFETCH_WINDOW  (512 * MiB)
+
+/*
+ * A migratable RAMBlock placed in the prefetcher's flat coordinate space
+ * (see ram_prefetch_init_blocks()), where it covers linear positions
+ * [start_linear_pos, start_linear_pos + len).  @rb is only compared, never
+ * dereferenced.
+ */
+typedef struct PrefetchBlock {
+    const RAMBlock *rb;
+    const uint8_t *host;
+    uint64_t len;
+    uint64_t start_linear_pos;
+} PrefetchBlock;
+
+typedef struct RAMPrefetchState {
+    size_t nblocks;
+    uint64_t total_len;
+    PrefetchBlock *blocks;
+
+    /* Claimed atomically by worker threads in PREFETCH_CHUNK increments. */
+    uint64_t next_linear_pos;
+
+    /*
+     * Last chunk-aligned position published to @saver_linear_pos.  Only
+     * accessed by the saver (the thread walking RAM_CHANNEL_PRECOPY), which
+     * uses it to skip taking @mutex until it enters a new PREFETCH_CHUNK.
+     */
+    uint64_t last_published_saver_linear_pos;
+
+    /*
+     * Protected by @mutex.  @saver_linear_pos is quantized to PREFETCH_CHUNK.
+     */
+    QemuMutex mutex;
+    QemuCond cond;
+    uint64_t saver_linear_pos;
+    bool stop;
+
+    QemuThread threads[PREFETCH_THREADS];
+} RAMPrefetchState;
+
 /* State of RAM for migration */
 struct RAMState {
     /*
@@ -434,8 +486,20 @@ struct RAMState {
      * Protected by @bitmap_mutex.
      */
     PageLocationHint page_hint;
+
+    /*
+     * Background RAM prefetcher for swap-heavy hosts.  Only allocated while
+     * a save is in progress and prefetching has engaged; NULL otherwise.
+     */
+    RAMPrefetchState *prefetch;
 };
 typedef struct RAMState RAMState;
+
+static void ram_prefetch_publish_saver_pos(RAMState *rs,
+                                           const PageSearchStatus *pss,
+                                           ram_addr_t offset);
+static void ram_prefetch_start(RAMState *rs);
+static void ram_prefetch_stop_join(RAMState *rs);
 
 static RAMState *ram_state;
 
@@ -2055,6 +2119,8 @@ static int ram_save_target_page(RAMState *rs, PageSearchStatus *pss)
     ram_addr_t offset = ((ram_addr_t)pss->page) << TARGET_PAGE_BITS;
     int res;
 
+    ram_prefetch_publish_saver_pos(rs, pss, offset);
+
     /* Hand over to RDMA first */
     if (migrate_rdma()) {
         res = rdma_control_save_page(pss->pss_channel, pss->block->offset,
@@ -2463,6 +2529,8 @@ static void ram_bitmaps_destroy(void)
 static void ram_save_cleanup(void *opaque)
 {
     RAMState **rsp = opaque;
+
+    ram_prefetch_stop_join(*rsp);
 
     /* We don't use dirty log with background snapshots */
     if (!migrate_background_snapshot()) {
@@ -3102,6 +3170,7 @@ static bool mapped_ram_read_header(QEMUFile *file, MappedRamHeader *header,
  * granularity of these critical sections.
  */
 
+/* Host swap-usage probes for the goldfish RAM prefetcher (see below). */
 #if defined(CONFIG_DARWIN) || defined(__APPLE__)
 #include <sys/sysctl.h>
 #endif
@@ -3168,11 +3237,192 @@ static uint64_t host_swap_used_mb(void)
     return 0;
 }
 
-static void ram_report_memory_pressure(void)
+static bool ram_prefetch_linear_pos(const RAMPrefetchState *pf,
+                                    const RAMBlock *rb,
+                                    ram_addr_t offset,
+                                    uint64_t *linear_pos_out)
+{
+    for (size_t i = 0; i < pf->nblocks; i++) {
+        if (pf->blocks[i].rb == rb) {
+            *linear_pos_out = pf->blocks[i].start_linear_pos + offset;
+            return true;
+        }
+    }
+    return false;
+}
+
+static void ram_prefetch_advance_cursor(RAMPrefetchState *pf,
+                                        uint64_t aligned_linear_pos)
+{
+    QEMU_LOCK_GUARD(&pf->mutex);
+
+    pf->saver_linear_pos = aligned_linear_pos;
+    qemu_cond_broadcast(&pf->cond);
+}
+
+/*
+ * Only the linear precopy walk moves the cursor.  With postcopy preempt,
+ * urgent pages are sent out of order from the return-path thread on
+ * RAM_CHANNEL_POSTCOPY; they must not drag the window forward, and skipping
+ * them keeps @last_published_saver_linear_pos owned by a single thread.
+ */
+static void ram_prefetch_publish_saver_pos(RAMState *rs,
+                                           const PageSearchStatus *pss,
+                                           ram_addr_t offset)
+{
+    RAMPrefetchState *pf = rs->prefetch;
+    const bool prefetch_engaged = pf != NULL;
+    const bool on_precopy_channel = pss == &rs->pss[RAM_CHANNEL_PRECOPY];
+    bool block_is_tracked;
+    bool entered_new_chunk;
+    uint64_t linear_pos, aligned_linear_pos;
+
+    if (!prefetch_engaged || !on_precopy_channel) {
+        return;
+    }
+
+    block_is_tracked = ram_prefetch_linear_pos(pf, pss->block, offset,
+                                               &linear_pos);
+    if (!block_is_tracked) {
+        return;
+    }
+
+    aligned_linear_pos = QEMU_ALIGN_DOWN(linear_pos, PREFETCH_CHUNK);
+    entered_new_chunk =
+        aligned_linear_pos > pf->last_published_saver_linear_pos;
+    if (entered_new_chunk) {
+        pf->last_published_saver_linear_pos = aligned_linear_pos;
+        ram_prefetch_advance_cursor(pf, aligned_linear_pos);
+    }
+}
+
+/*
+ * Block until @chunk_linear_pos falls within PREFETCH_WINDOW ahead of the
+ * saver cursor. Returns true if the chunk should be prefetched, or false if
+ * prefetching was stopped.
+ */
+static bool ram_prefetch_wait_for_window(RAMPrefetchState *pf,
+                                         uint64_t chunk_linear_pos)
+{
+    QEMU_LOCK_GUARD(&pf->mutex);
+
+    for (;;) {
+        const bool stop_requested = pf->stop;
+        const bool chunk_in_window =
+            chunk_linear_pos <= pf->saver_linear_pos + PREFETCH_WINDOW;
+
+        if (stop_requested || chunk_in_window) {
+            return !stop_requested;
+        }
+        qemu_cond_wait(&pf->cond, &pf->mutex);
+    }
+}
+
+/*
+ * Touch-read one byte per host page in the PREFETCH_CHUNK starting at
+ * @chunk_linear_pos within @pb to trigger swap-in faults ahead of the saver.
+ */
+static size_t ram_prefetch_touch_chunk(const PrefetchBlock *pb,
+                                       uint64_t chunk_linear_pos,
+                                       size_t pagesz)
+{
+    uint64_t off = chunk_linear_pos - pb->start_linear_pos;
+    uint64_t end = MIN(off + PREFETCH_CHUNK, pb->len);
+    size_t touched = 0;
+    volatile uint8_t sink = 0; /* don't let the compiler elide the reads */
+
+    for (; off < end; off += pagesz) {
+        sink ^= pb->host[off];
+        touched++;
+    }
+    (void)sink;
+    return touched;
+}
+
+/*
+ * goldfish: prefetch-under-swap worker (Android Emulator addition, not
+ * upstream QEMU; b/553593925).
+ *
+ * The RAM save walk is linear, so when the host has paged guest RAM out,
+ * PREFETCH_THREADS of these workers claim PREFETCH_CHUNK-sized chunks in
+ * migration order and touch-read them a bounded PREFETCH_WINDOW ahead of the
+ * saver's cursor (ram_prefetch_publish_saver_pos()).  This converts the
+ * serialized single-page swap-in faults the save loop would otherwise pay
+ * into overlapped, batched swap-ins.  The window is bounded so prefetching
+ * cannot itself evict pages the cursor has not reached yet.
+ *
+ * The workers only engage (ram_prefetch_should_engage()) when host swap usage
+ * indicates guest RAM may actually be paged out (default threshold: swap used
+ * >= 1/4 of the RAM being saved); with resident RAM the plain save loop is
+ * already bandwidth-bound and prefetching would only burn CPU.
+ */
+static void *ram_prefetch_thread_fn(void *opaque)
+{
+    RAMPrefetchState *pf = opaque;
+    const size_t pagesz = qemu_real_host_page_size();
+    size_t touched = 0;
+    size_t block_idx = 0;
+
+    for (;;) {
+        uint64_t linear_pos = qatomic_fetch_add(&pf->next_linear_pos,
+                                                PREFETCH_CHUNK);
+        const bool all_chunks_claimed = linear_pos >= pf->total_len;
+        bool stop_requested;
+
+        if (all_chunks_claimed) {
+            break;
+        }
+
+        stop_requested = !ram_prefetch_wait_for_window(pf, linear_pos);
+        if (stop_requested) {
+            break;
+        }
+
+        while (linear_pos >= pf->blocks[block_idx].start_linear_pos +
+                             pf->blocks[block_idx].len) {
+            block_idx++;
+        }
+        touched += ram_prefetch_touch_chunk(&pf->blocks[block_idx], linear_pos,
+                                            pagesz);
+    }
+
+    fprintf(stderr, "ram-prefetch: thread done, touched %zu pages\n", touched);
+    return NULL;
+}
+
+static bool ram_prefetch_should_engage(uint64_t total_ram, size_t nblocks)
+{
+    uint64_t min_swap = (total_ram >> 20) / 4;
+    uint64_t swap_used = host_swap_used_mb();
+    const bool no_ram_to_save = nblocks == 0;
+    const bool no_memory_pressure = swap_used < min_swap;
+
+    if (no_ram_to_save || no_memory_pressure) {
+        fprintf(stderr,
+                "ram-prefetch: host swap used %" PRIu64 " MB < %" PRIu64
+                " MB threshold, not engaging\n", swap_used, min_swap);
+        return false;
+    }
+
+    fprintf(stderr,
+            "ram-prefetch: engaging (host swap used %" PRIu64 " MB), "
+            "%zu blocks, %" PRIu64 " MB total, window %" PRIu64
+            " MB, %d threads\n",
+            swap_used, nblocks, total_ram >> 20,
+            (uint64_t)(PREFETCH_WINDOW >> 20), PREFETCH_THREADS);
+    return true;
+}
+
+/*
+ * Snapshot migratable RAMBlocks into a flat coordinate space where each
+ * block's @start_linear_pos is aligned to PREFETCH_CHUNK so chunks never
+ * straddle two RAMBlocks.
+ */
+static bool ram_prefetch_init_blocks(RAMPrefetchState *pf)
 {
     RAMBlock *block;
-    uint64_t total_ram = 0, swap_used, min_swap;
-    int n = 0;
+    uint64_t total_ram = 0, linear_pos = 0;
+    size_t n = 0;
 
     WITH_RCU_READ_LOCK_GUARD() {
         RAMBLOCK_FOREACH_MIGRATABLE(block) {
@@ -3181,23 +3431,77 @@ static void ram_report_memory_pressure(void)
                 total_ram += block->used_length;
             }
         }
+        if (!ram_prefetch_should_engage(total_ram, n)) {
+            return false;
+        }
+
+        pf->blocks = g_new0(PrefetchBlock, n);
+        n = 0;
+        RAMBLOCK_FOREACH_MIGRATABLE(block) {
+            if (block->host && block->used_length) {
+                pf->blocks[n++] = (PrefetchBlock){
+                    .rb = block,
+                    .host = block->host,
+                    .len = block->used_length,
+                    .start_linear_pos = linear_pos,
+                };
+                linear_pos = ROUND_UP(linear_pos + block->used_length,
+                                      PREFETCH_CHUNK);
+            }
+        }
     }
 
-    min_swap = (total_ram >> 20) / 4;
-    swap_used = host_swap_used_mb();
-    if (n == 0 || swap_used < min_swap) {
-        fprintf(stderr,
-                "ram-save: no memory pressure (host swap used %" PRIu64
-                " MB < %" PRIu64 " MB threshold, %d blocks, %" PRIu64
-                " MB total)\n",
-                swap_used, min_swap, n, total_ram >> 20);
-    } else {
-        fprintf(stderr,
-                "ram-save: memory pressure detected (host swap used %" PRIu64
-                " MB >= %" PRIu64 " MB threshold, %d blocks, %" PRIu64
-                " MB total)\n",
-                swap_used, min_swap, n, total_ram >> 20);
+    pf->nblocks = n;
+    pf->total_len = linear_pos;
+    return true;
+}
+
+static void ram_prefetch_start(RAMState *rs)
+{
+    RAMPrefetchState *pf;
+
+    if (rs->prefetch) {
+        return;
     }
+
+    pf = g_new0(RAMPrefetchState, 1);
+    if (!ram_prefetch_init_blocks(pf)) {
+        g_free(pf);
+        return;
+    }
+
+    qemu_mutex_init(&pf->mutex);
+    qemu_cond_init(&pf->cond);
+
+    for (int i = 0; i < PREFETCH_THREADS; i++) {
+        qemu_thread_create(&pf->threads[i], "ram-prefetch",
+                           ram_prefetch_thread_fn, pf,
+                           QEMU_THREAD_JOINABLE);
+    }
+    rs->prefetch = pf;
+}
+
+static void ram_prefetch_stop_join(RAMState *rs)
+{
+    RAMPrefetchState *pf;
+
+    if (!rs || !rs->prefetch) {
+        return;
+    }
+    pf = rs->prefetch;
+
+    WITH_QEMU_LOCK_GUARD(&pf->mutex) {
+        pf->stop = true;
+        qemu_cond_broadcast(&pf->cond);
+    }
+    for (int i = 0; i < PREFETCH_THREADS; i++) {
+        qemu_thread_join(&pf->threads[i]);
+    }
+    qemu_cond_destroy(&pf->cond);
+    qemu_mutex_destroy(&pf->mutex);
+    g_free(pf->blocks);
+    g_free(pf);
+    rs->prefetch = NULL;
 }
 
 /**
@@ -3268,7 +3572,7 @@ static int ram_save_setup(QEMUFile *f, void *opaque, Error **errp)
         multifd_ram_save_setup();
     }
 
-    ram_report_memory_pressure();
+    ram_prefetch_start(*rsp);
 
     /*
      * This operation is unfortunate..

@@ -744,6 +744,26 @@ void bdrv_set_default_vmstate_node(const char *node_name)
     }
 }
 
+BlockDriverState *bdrv_find_read_only_vmstate_bs(const char *vmstate_bs)
+{
+    BlockDriverState *bs;
+
+    GLOBAL_STATE_CODE();
+    GRAPH_RDLOCK_GUARD_MAINLOOP();
+
+    if (!vmstate_bs) {
+        vmstate_bs = default_vmstate_node;
+    }
+    if (!vmstate_bs) {
+        return NULL;
+    }
+    bs = bdrv_find_node(vmstate_bs);
+    if (!bs || !bdrv_is_inserted(bs) || !bdrv_is_read_only(bs)) {
+        return NULL;
+    }
+    return bs;
+}
+
 BlockDriverState *bdrv_all_find_vmstate_bs(const char *vmstate_bs,
                                            bool has_devices, strList *devices,
                                            Error **errp)

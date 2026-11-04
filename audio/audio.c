@@ -219,6 +219,9 @@ static void audio_create_pdos(Audiodev *dev)
 #ifdef CONFIG_SPICE
         CASE(SPICE, spice, );
 #endif
+#ifdef CONFIG_WIN32
+        CASE(WASAPI, wasapi, );
+#endif
         CASE(WAV, wav, );
 
     case AUDIODEV_DRIVER__MAX:
@@ -316,6 +319,10 @@ static AudiodevPerDirectionOptions *audio_get_pdo_out(Audiodev *dev)
     case AUDIODEV_DRIVER_SPICE:
         return dev->u.spice.out;
 #endif
+#ifdef CONFIG_WIN32
+    case AUDIODEV_DRIVER_WASAPI:
+        return dev->u.wasapi.out;
+#endif
     case AUDIODEV_DRIVER_WAV:
         return dev->u.wav.out;
 
@@ -374,6 +381,10 @@ static AudiodevPerDirectionOptions *audio_get_pdo_in(Audiodev *dev)
 #ifdef CONFIG_SPICE
     case AUDIODEV_DRIVER_SPICE:
         return dev->u.spice.in;
+#endif
+#ifdef CONFIG_WIN32
+    case AUDIODEV_DRIVER_WASAPI:
+        return dev->u.wasapi.in;
 #endif
     case AUDIODEV_DRIVER_WAV:
         return dev->u.wav.in;

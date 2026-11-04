@@ -386,6 +386,10 @@ AudiodevPerDirectionOptions *glue(audio_get_pdo_, TYPE)(Audiodev *dev)
     case AUDIODEV_DRIVER_SPICE:
         return dev->u.spice.TYPE;
 #endif
+#ifdef CONFIG_WIN32
+    case AUDIODEV_DRIVER_WASAPI:
+        return dev->u.wasapi.TYPE;
+#endif
     case AUDIODEV_DRIVER_WAV:
         return dev->u.wav.TYPE;
 

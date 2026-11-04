@@ -2,6 +2,53 @@
 
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+
+def _cc_headers_only_impl(ctx):
+    return [CcInfo(
+        compilation_context = cc_common.merge_compilation_contexts(
+            compilation_contexts = [dep[CcInfo].compilation_context for dep in ctx.attr.deps],
+        ),
+    )]
+
+cc_headers_only = rule(
+    implementation = _cc_headers_only_impl,
+    attrs = {
+        "deps": attr.label_list(providers = [CcInfo]),
+    },
+)
+
+def _posix_export_files(name, win_def_file):
+    """Generates macOS and Linux linker export files from a Windows .def file."""
+    macos_exp = "_" + name + "_macos.exp"
+    native.genrule(
+        name = "_" + name + "_macos_exports",
+        srcs = [win_def_file],
+        outs = [macos_exp],
+        tools = ["@qemu//google/scripts:gen_linker_exports"],
+        cmd = (
+            "$(location @qemu//google/scripts:gen_linker_exports) --os=macos " +
+            "$(location " + win_def_file + ") -o \"$@\""
+        ),
+        target_compatible_with = ["@platforms//os:macos"],
+        visibility = ["//visibility:private"],
+    )
+
+    linux_lds = "_" + name + "_linux.lds"
+    native.genrule(
+        name = "_" + name + "_linux_exports",
+        srcs = [win_def_file],
+        outs = [linux_lds],
+        tools = ["@qemu//google/scripts:gen_linker_exports"],
+        cmd = (
+            "$(location @qemu//google/scripts:gen_linker_exports) --os=linux " +
+            "$(location " + win_def_file + ") -o \"$@\""
+        ),
+        target_compatible_with = ["@platforms//os:linux"],
+        visibility = ["//visibility:private"],
+    )
+    return macos_exp, linux_lds
 
 def cc_interface_binary(
         name,
@@ -18,13 +65,14 @@ def cc_interface_binary(
     create an interface library to which your plugin can link. The name of the interface library
     is `${name}.if`
 
-    All the symbols in the win_def_file will be exported from the executable.
+    All the symbols in the win_def_file will be exported from the executable on
+    Windows, macOS, and Linux.
     On darwin the executable will be signed with the provided entitlements.
 
 
     Args:
         name (str): The name of the C++ binary target.
-        win_def_file (str): The path to the Windows DEF file for the shared library.
+        win_def_file (str): The path to the DEF file listing exported symbols.
         data (list, optional): Additional data files to be included in the C++ binary target. Defaults to None.
         tags (list, optional): A list of tags to be applied to the targets. Defaults to None.
         visibility (list, optional): A list of labels that control the visibility of the targets. Defaults to None.
@@ -51,18 +99,29 @@ def cc_interface_binary(
 
     Other targets can link against the interface library `my_binary.if`, and can be loaded by `my_binary`
     """
+    macos_exp = None
+    linux_lds = None
+    if win_def_file:
+        macos_exp, linux_lds = _posix_export_files(name, win_def_file)
 
     cc_binary(
         name = name,
         tags = tags,
         visibility = visibility,
-        linkopts = (linkopts or []) + select({
+        linkopts = (linkopts or []) + (select({
             # win_def_file is ignored if linkshared=False so we have to pass the linkopts manually.
-            "@platforms//os:windows": ["/DEF:$(location " + win_def_file + ")"] if win_def_file else [],
+            "@platforms//os:windows": ["/DEF:$(location " + win_def_file + ")"],
+            "@platforms//os:macos": ["-Wl,-exported_symbols_list,$(location :" + macos_exp + ")"],
+            "@platforms//os:linux": ["-Wl,@$(location :" + linux_lds + ")"],
             "//conditions:default": [],
-        }),
+        }) if win_def_file else []),
         data = data,
-        additional_linker_inputs = ([win_def_file] if win_def_file else []),
+        additional_linker_inputs = select({
+            "@platforms//os:windows": [win_def_file],
+            "@platforms//os:macos": [":" + macos_exp],
+            "@platforms//os:linux": [":" + linux_lds],
+            "//conditions:default": [],
+        }) if win_def_file else [],
         **kwargs
     )
 
