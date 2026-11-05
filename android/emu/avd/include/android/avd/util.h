@@ -141,6 +141,9 @@ typedef enum {
 /* Determine the flavor of system image. */
 AvdFlavor propertyFile_getAvdFlavor(const FileData* data);
 
+/* Determine the flavor of an AVD from its config.ini tag.id value. */
+AvdFlavor avdFlavor_fromTagId(const char* tagId);
+
 /* Determine whether a ATD system image is used. */
 bool propertyFile_isAtd(const FileData* data);
 

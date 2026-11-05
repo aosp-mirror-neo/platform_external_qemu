@@ -290,6 +290,12 @@ static android_studio::EmulatorAvdInfo::EmulatorDeviceName getDeviceName() {
     if (0 == strcmp(id, "7.6in Foldable")) {
         return android_studio::EmulatorAvdInfo::FOLDABLE_7_6_IN;
     }
+    if (0 == strcmp(id, "foldable_4_3")) {
+        return android_studio::EmulatorAvdInfo::FOLDABLE_4_3;
+    }
+    if (0 == strcmp(id, "foldable_1_1")) {
+        return android_studio::EmulatorAvdInfo::FOLDABLE_1_1;
+    }
     if (0 == strcmp(id, "small_phone")) {
         return android_studio::EmulatorAvdInfo::SMALL_PHONE;
     }

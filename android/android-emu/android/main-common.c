@@ -1805,6 +1805,9 @@ bool emulator_parseCommonCommandLineOptions(int* p_argc,
     int inAndroidBuild = 0;
     AvdInfo* avd = *the_avd = createAVD(opts, &inAndroidBuild);
 
+    // The config.ini skin below only fills in -skin when it was not passed.
+    const bool skinFromCommandLine = opts->skin != NULL;
+
     /* get the skin from the virtual device configuration */
     if (opts->skindir != NULL) {
         if (opts->skin == NULL) {
@@ -1865,6 +1868,15 @@ bool emulator_parseCommonCommandLineOptions(int* p_argc,
     // by featurecontrol component itself.
     feature_initialize();
     feature_update_from_server();
+
+    // Check the display size once the hw config and feature flags are loaded,
+    // so android_foldable_is_pixel_fold() matches main.cpp, which replaces a
+    // numeric skin with the hw.lcd size on those devices.
+    if (!avdInfo_checkSkinMatchesLcd(
+                avd, skinFromCommandLine ? opts->skin : NULL, opts->skin,
+                opts->skindir, android_foldable_is_pixel_fold())) {
+        return false;
+    }
 
     if (feature_is_enabled(kFeature_Minigbm) &&
         strcmp(hw->hw_gltransport, "virtio-gpu-asg") &&

@@ -26,10 +26,11 @@
 #include "android/utils/debug.h"
 
 #include <assert.h>
-#include <limits.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include <errno.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #define D(...) VERBOSE_PRINT(init,__VA_ARGS__)
 
@@ -317,6 +318,38 @@ AvdFlavor propertyFile_getAvdFlavor(const FileData* data) {
     }
 
     return res;
+}
+
+AvdFlavor avdFlavor_fromTagId(const char* tagId) {
+    static const struct {
+        const char* substring;
+        AvdFlavor flavor;
+    } kTagIdMap[] = {
+            {"tv", AVD_TV},
+            {"wear", AVD_WEAR},
+            {"automotive", AVD_ANDROID_AUTO},
+            {"desktop", AVD_DESKTOP},
+            {"chromeos", AVD_DESKTOP},
+            {"xr", AVD_XR},
+            {"glasses", AVD_GLASSES},
+            {"google_apis", AVD_PHONE},
+            {"google_atd", AVD_PHONE},
+            {"aosp_atd", AVD_PHONE},
+            {"default", AVD_PHONE},
+    };
+    size_t i;
+
+    if (!tagId || !tagId[0]) {
+        return AVD_OTHER;
+    }
+
+    for (i = 0; i < ARRAY_SIZE(kTagIdMap); ++i) {
+        if (strstr(tagId, kTagIdMap[i].substring) != NULL) {
+            return kTagIdMap[i].flavor;
+        }
+    }
+
+    return AVD_OTHER;
 }
 
 bool propertyFile_isAtd(const FileData* data) {

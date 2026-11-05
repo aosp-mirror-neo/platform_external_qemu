@@ -388,6 +388,21 @@ static void runAdbScripts(emulation::AdbInterface* adbInterface,
     }
 }
 
+// Publishes the first hinge of |state| as the system display feature, e.g.
+// "fold-[1224,0,1224,1848]". Android accepts only one hinge area currently.
+static void publishHingeDisplayFeature(emulation::AdbInterface* adbInterface,
+                                       const FoldableState& state) {
+    char hingeArea[128];
+    snprintf(hingeArea, sizeof(hingeArea), "%s-[%d,%d,%d,%d]",
+             (state.config.hingesSubType == ANDROID_FOLDABLE_HINGE_FOLD) ? "fold" : "hinge",
+             state.config.hingeParams[0].x,
+             state.config.hingeParams[0].y,
+             state.config.hingeParams[0].x + state.config.hingeParams[0].width,
+             state.config.hingeParams[0].y + state.config.hingeParams[0].height);
+    adbInterface->enqueueCommand(
+            {"shell", "settings", "put", "global", "display_features", hingeArea});
+}
+
 static void bootCompleteFunction() {
     bool restartFrameWork = false;
     // bug: 152636877
@@ -528,8 +543,8 @@ static void bootCompleteFunction() {
 
             // Foldable hinge area and posture update. Called when cold boot or
             // Android reboot itself note: this does not apply to pixel_fold
-            const bool not_pixel_fold = !android_foldable_is_pixel_fold();
-            if (android_foldable_hinge_configured() && not_pixel_fold) {
+            const bool is_pixel_fold = android_foldable_is_pixel_fold();
+            if (android_foldable_hinge_configured() && !is_pixel_fold) {
                 int xOffset = getConsoleAgents()->settings->hw()->hw_displayRegion_0_1_xOffset;
                 int yOffset = getConsoleAgents()->settings->hw()->hw_displayRegion_0_1_yOffset;
                 int width = getConsoleAgents()->settings->hw()->hw_displayRegion_0_1_width;
@@ -543,17 +558,18 @@ static void bootCompleteFunction() {
                 FoldableState state;
                 if (!android_foldable_get_state(&state)) {
                     android::physics::FoldableModel::sendPostureToSystem(state.currentPosture);
-                    // Android accepts only one hinge area currently
-                    char hingeArea[128];
-                    snprintf(hingeArea, 128, "%s-[%d,%d,%d,%d]",
-                             (state.config.hingesSubType == ANDROID_FOLDABLE_HINGE_FOLD) ? "fold" : "hinge",
-                             state.config.hingeParams[0].x,
-                             state.config.hingeParams[0].y,
-                             state.config.hingeParams[0].x + state.config.hingeParams[0].width,
-                             state.config.hingeParams[0].y + state.config.hingeParams[0].height);
-                    adbInterface->enqueueCommand({ "shell", "settings", "put",
-                                                   "global", "display_features",
-                                                   hingeArea });
+                    publishHingeDisplayFeature(adbInterface, state);
+                }
+            }
+            // Generic foldables, e.g. "Foldable (4:3 inner display)", run in
+            // two-display mode without a device overlay, so the system has no
+            // hinge description: publish the one configured for this AVD.
+            if (is_pixel_fold && android_foldable_hinge_configured() &&
+                avdInfo_isGenericFoldable(
+                        getConsoleAgents()->settings->hw()->hw_device_name)) {
+                FoldableState state;
+                if (!android_foldable_get_state(&state)) {
+                    publishHingeDisplayFeature(adbInterface, state);
                 }
             }
             // Sync folded area and LID open/close for foldable hinge/rollable/legacyFold
