@@ -118,7 +118,7 @@ SelectedRenderer emuglConfig_get_renderer(const char* gpu_mode) {
         return SELECTED_RENDERER_HOST;
     } else if (!strcmp(gpu_mode, "swiftshader")) {
         return SELECTED_RENDERER_SWIFTSHADER_INDIRECT;
-    } else if (!strcmp(gpu_mode, "swangle")) {
+    } else if (!strcmp(gpu_mode, "swangle") || !strcmp(gpu_mode, "angle")) {
         return SELECTED_RENDERER_ANGLE_INDIRECT;
     } else if (!strcmp(gpu_mode, "lavapipe") || !strcmp(gpu_mode, "llvmpipe")) {
         return SELECTED_RENDERER_LAVAPIPE;
@@ -1131,19 +1131,24 @@ bool emuglConfig_init(EmuglConfig* config,
             !sufficientHostVulkanDriver) {
             switchToSoftwareGles = true;
         }
-#ifdef __APPLE__
-        // On macOS, native host OpenGL is deprecated and only supports
-        // GLES 3.0. Use software rendering (swangle) when 'auto' is requested
-        // for API levels 35+ so GLES 3.1 and compute shaders are supported.
-        if (needsNativeGLES31) {
-            dinfo("API level %d requires GLES 3.1, forcing software rendering for GLES.",
-                  api_level);
-            switchToSoftwareGles = true;
-        }
-#endif
-
         if (switchToSoftwareGles) {
             gles_mode_selected = "swangle";
+#ifdef __APPLE__
+        } else if (needsNativeGLES31) {
+            if (vulkan_mode_selected == "host" && hasMetal4()) {
+                // On macOS, native host OpenGL is deprecated and only supports
+                // GLES 3.0. When KosmicKrisp (Metal 4) host Vulkan is active,
+                // use ANGLE on Vulkan so GLES 3.1 and compute shaders are
+                // supported with hardware acceleration.
+                dinfo("API level %d requires GLES 3.1, using ANGLE on Vulkan for GLES.",
+                      api_level);
+                gles_mode_selected = "angle";
+            } else {
+                dinfo("API level %d requires GLES 3.1, forcing software rendering for GLES.",
+                      api_level);
+                gles_mode_selected = "swangle";
+            }
+#endif
         } else {
             gles_mode_selected = "host";
         }
@@ -1331,8 +1336,9 @@ void emuglConfig_setupEnv(const EmuglConfig* config) {
     }
 
     // Setup GLES
-    bool use_swangle = strstr(config->gles_backend, "angle");
-    const char* gles_library = (strcmp(config->gles_backend, "swangle") == 0)
+    bool use_swangle = (strcmp(config->gles_backend, "swangle") == 0);
+    bool use_angle = (strcmp(config->gles_backend, "angle") == 0);
+    const char* gles_library = (use_swangle || use_angle)
                                        ? "angle"
                                        : config->gles_backend;
     // $EXEC_DIR/<lib>/ is already added to the library search path by default,
@@ -1355,11 +1361,14 @@ void emuglConfig_setupEnv(const EmuglConfig* config) {
 
     if (use_swangle) {
         system->envSet("ANGLE_DEFAULT_PLATFORM", "swiftshader");
+    } else if (use_angle) {
+        system->envSet("ANGLE_DEFAULT_PLATFORM", "vulkan");
     }
 
     if (!strcmp(config->gles_backend, "swiftshader") ||
         !strcmp(config->gles_backend, "llvmpipe") ||
-        !strcmp(config->gles_backend, "swangle")) {
+        !strcmp(config->gles_backend, "swangle") ||
+        !strcmp(config->gles_backend, "angle")) {
         system->envSet("ANDROID_EGL_ON_EGL", "1");
     }
 }

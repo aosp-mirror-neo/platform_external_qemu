@@ -44,14 +44,15 @@ namespace base {
 #if defined(__arm64__)
 #  define LAVAPIPE_RESULT "lavapipe"
 #  define HOST_VULKAN_RESULT "host"
+#  define AUTO_GLES_RESULT_35_PLUS (hasMetal4() ? "angle" : "swangle")
 #else
 #  define LAVAPIPE_RESULT "swiftshader" // TODO(b/462005807)
 #  define HOST_VULKAN_RESULT "swiftshader"
+#  define AUTO_GLES_RESULT_35_PLUS "swangle"
 #endif
 #  define SWIFTSHADER_RESULT "swangle" // Mac redirects swiftshader to swangle
 #  define SWANGLE_RESULT "swangle"
 #  define AUTO_GLES_RESULT "host"
-#  define AUTO_GLES_RESULT_35_PLUS "swangle"
 #else
 #  define LIB_NAME(x)  "lib" x ".so"
 #  define LAVAPIPE_RESULT "lavapipe"
@@ -360,7 +361,8 @@ TEST(EmuglConfig, initFromUISetting) {
 #endif
         }
 
-        if (strcmp(config.gles_backend, "swangle") == 0) {
+        if (strcmp(config.gles_backend, "swangle") == 0 ||
+            strcmp(config.gles_backend, "angle") == 0) {
             std::string libSearchPath =
                     System::get()->envGet(System::kLibrarySearchListEnvVarName);
             EXPECT_NE(std::string::npos, libSearchPath.find("gles_angle"));
@@ -489,6 +491,19 @@ TEST(EmuglConfig, initWithEmuglConfigInitApiLevel) {
         }
     }
 
+    {
+        // When GuestAngle is enabled, API 35 should stay host even on macOS
+        feature_reset();
+        feature_set_if_not_overridden(kFeature_GuestAngle, true);
+        EmuglConfig config;
+        bool initRes = androidEmuglConfigInit(
+                &config, nullptr, "auto", false,
+                WINSYS_GLESBACKEND_PREFERENCE_AUTO, 35);
+        EXPECT_TRUE(initRes);
+        if (!onDenyList) {
+            EXPECT_STREQ(AUTO_GLES_RESULT, config.gles_backend);
+        }
+    }
 }
 
 TEST(EmuglConfig, initNoWindowWithAuto) {
@@ -524,6 +539,86 @@ TEST(EmuglConfig, initNoWindowWithLavapipe) {
 }
 
 TEST(EmuglConfig, setupEnv) {
+    TestSystem testSys("foo", System::kProgramBitness, "/");
+    TestTempDir* myDir = testSys.getTempRoot();
+    myDir->makeSubDir(System::get()->getLauncherDirectory().c_str());
+    makeLibSubDir(myDir, "");
+
+    makeSwAngleSubDirAndFiles(myDir);
+    makeSwiftshaderSubDirAndFiles(myDir);
+
+    {
+        // Test setupEnv with swangle backend
+        System::get()->envSet("ANGLE_DEFAULT_PLATFORM", "");
+        System::get()->envSet("ANDROID_EGL_ON_EGL", "");
+        System::get()->envSet(System::kLibrarySearchListEnvVarName, "");
+
+        EmuglConfig config = {};
+        snprintf(config.gles_backend, sizeof(config.gles_backend), "swangle");
+        snprintf(config.vulkan_backend, sizeof(config.vulkan_backend), "swiftshader");
+
+        emuglConfig_setupEnv(&config);
+
+        EXPECT_STREQ("swiftshader",
+                     System::get()->envGet("ANGLE_DEFAULT_PLATFORM").c_str());
+        EXPECT_STREQ("1",
+                     System::get()->envGet("ANDROID_EGL_ON_EGL").c_str());
+        std::string libSearchPath =
+                System::get()->envGet(System::kLibrarySearchListEnvVarName);
+        EXPECT_NE(std::string::npos, libSearchPath.find("gles_angle"));
+    }
+
+    {
+        // Test setupEnv with angle backend
+        System::get()->envSet("ANGLE_DEFAULT_PLATFORM", "");
+        System::get()->envSet("ANDROID_EGL_ON_EGL", "");
+        System::get()->envSet(System::kLibrarySearchListEnvVarName, "");
+
+        EmuglConfig config = {};
+        snprintf(config.gles_backend, sizeof(config.gles_backend), "angle");
+        snprintf(config.vulkan_backend, sizeof(config.vulkan_backend), "host");
+
+        emuglConfig_setupEnv(&config);
+
+        EXPECT_STREQ("vulkan",
+                     System::get()->envGet("ANGLE_DEFAULT_PLATFORM").c_str());
+        EXPECT_STREQ("1",
+                     System::get()->envGet("ANDROID_EGL_ON_EGL").c_str());
+        std::string libSearchPath =
+                System::get()->envGet(System::kLibrarySearchListEnvVarName);
+        EXPECT_NE(std::string::npos, libSearchPath.find("gles_angle"));
+    }
+
+    {
+        // Test setupEnv with host backend
+        System::get()->envSet("ANGLE_DEFAULT_PLATFORM", "");
+        System::get()->envSet("ANDROID_EGL_ON_EGL", "");
+        System::get()->envSet(System::kLibrarySearchListEnvVarName, "");
+
+        EmuglConfig config = {};
+        snprintf(config.gles_backend, sizeof(config.gles_backend), "host");
+        snprintf(config.vulkan_backend, sizeof(config.vulkan_backend), "host");
+
+        emuglConfig_setupEnv(&config);
+
+        EXPECT_STREQ("",
+                     System::get()->envGet("ANGLE_DEFAULT_PLATFORM").c_str());
+        EXPECT_STREQ("",
+                     System::get()->envGet("ANDROID_EGL_ON_EGL").c_str());
+    }
+}
+
+TEST(EmuglConfig, getRenderer) {
+    EXPECT_EQ(SELECTED_RENDERER_HOST, emuglConfig_get_renderer("host"));
+    EXPECT_EQ(SELECTED_RENDERER_HOST, emuglConfig_get_renderer("on"));
+    EXPECT_EQ(SELECTED_RENDERER_SWIFTSHADER_INDIRECT, emuglConfig_get_renderer("swiftshader"));
+    EXPECT_EQ(SELECTED_RENDERER_ANGLE_INDIRECT, emuglConfig_get_renderer("swangle"));
+    EXPECT_EQ(SELECTED_RENDERER_ANGLE_INDIRECT, emuglConfig_get_renderer("angle"));
+    EXPECT_EQ(SELECTED_RENDERER_LAVAPIPE, emuglConfig_get_renderer("lavapipe"));
+    EXPECT_EQ(SELECTED_RENDERER_LAVAPIPE, emuglConfig_get_renderer("llvmpipe"));
+    EXPECT_EQ(SELECTED_RENDERER_ERROR, emuglConfig_get_renderer("error"));
+    EXPECT_EQ(SELECTED_RENDERER_UNKNOWN, emuglConfig_get_renderer("unknown"));
+    EXPECT_EQ(SELECTED_RENDERER_UNKNOWN, emuglConfig_get_renderer(nullptr));
 }
 
 TEST(EmuglConfig, hostGpuProps) {
