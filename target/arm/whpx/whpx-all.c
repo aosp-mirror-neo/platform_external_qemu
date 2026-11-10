@@ -272,6 +272,7 @@ static struct whpx_sreg_match whpx_sreg_match[] = {
     { WHvArm64RegisterCsselrEl1, ENCODE_AA64_CP_REG(3, 2, 0, 0, 0) },
     { WHvArm64RegisterTpidrEl0, ENCODE_AA64_CP_REG(3, 3, 13, 0, 2) },
     { WHvArm64RegisterTpidrroEl0, ENCODE_AA64_CP_REG(3, 3, 13, 0, 3) },
+    { WHvArm64RegisterCntvctEl0, ENCODE_AA64_CP_REG(3, 3, 14, 0, 2) },
     { WHvArm64RegisterCntvCtlEl0, ENCODE_AA64_CP_REG(3, 3, 14, 3, 1) },
     { WHvArm64RegisterCntvCvalEl0, ENCODE_AA64_CP_REG(3, 3, 14, 3, 2) },
     { WHvArm64RegisterSpEl1, ENCODE_AA64_CP_REG(3, 4, 4, 1, 0) },
@@ -521,6 +522,51 @@ static void clean_whv_register_value(WHV_REGISTER_VALUE *val)
     memset(val, 0, sizeof(WHV_REGISTER_VALUE));
 }
 
+static WHPXStateLevel whpx_sreg_level(WHV_REGISTER_NAME reg)
+{
+    /*
+     * Match kvm_arm_cpreg_level(): system registers default to
+     * WHPX_LEVEL_RUNTIME_STATE, except the virtual counter, which rewinds
+     * guest time when written and is only synced on WHPX_LEVEL_FULL_STATE.
+     */
+    switch (reg) {
+    case WHvArm64RegisterCntvctEl0:
+        return WHPX_LEVEL_FULL_STATE;
+    default:
+        return WHPX_LEVEL_RUNTIME_STATE;
+    }
+}
+
+static void whpx_get_virtual_time(CPUState *cpu)
+{
+    AccelCPUState *vcpu = cpu->accel;
+    WHV_REGISTER_VALUE val;
+
+    if (vcpu->vtime_dirty) {
+        return;
+    }
+
+    clean_whv_register_value(&val);
+    whpx_get_reg(cpu, WHvArm64RegisterCntvctEl0, &val);
+    vcpu->vtime = val.Reg64;
+    vcpu->vtime_dirty = true;
+}
+
+static void whpx_put_virtual_time(CPUState *cpu)
+{
+    AccelCPUState *vcpu = cpu->accel;
+    WHV_REGISTER_VALUE val;
+
+    if (!vcpu->vtime_dirty) {
+        return;
+    }
+
+    clean_whv_register_value(&val);
+    val.Reg64 = vcpu->vtime;
+    whpx_set_reg(cpu, WHvArm64RegisterCntvctEl0, val);
+    vcpu->vtime_dirty = false;
+}
+
 void whpx_get_registers(CPUState *cpu, WHPXStateLevel level)
 {
     ARMCPU *arm_cpu = ARM_CPU(cpu);
@@ -555,7 +601,15 @@ void whpx_get_registers(CPUState *cpu, WHPXStateLevel level)
             continue;
         }
 
-        if (whpx_sreg_match[i].global) {
+        clean_whv_register_value(&val);
+        if (whpx_sreg_match[i].reg == WHvArm64RegisterCntvctEl0 &&
+            cpu->accel->vtime_dirty) {
+            /*
+             * Match kvm_arm_cpu_pre_save(): while stopped, record the counter
+             * frozen at VM stop rather than the still-running host counter.
+             */
+            val.Reg64 = cpu->accel->vtime;
+        } else if (whpx_sreg_match[i].global) {
             /* WHP disallows us from accessing global regs as a vCPU */
             whpx_get_global_reg(whpx_sreg_match[i].reg, &val);
         } else {
@@ -609,13 +663,26 @@ void whpx_set_registers(CPUState *cpu, WHPXStateLevel level)
         if (whpx_sreg_match[i].cp_idx == -1) {
             continue;
         }
+        if (whpx_sreg_level(whpx_sreg_match[i].reg) > level) {
+            continue;
+        }
 
+        clean_whv_register_value(&val);
         val.Reg64 = arm_cpu->cpreg_values[whpx_sreg_match[i].cp_idx];
         if (whpx_sreg_match[i].global) {
             /* WHP disallows us from accessing global regs as a vCPU */
             whpx_set_global_reg(whpx_sreg_match[i].reg, val);
         } else {
             whpx_set_reg(cpu, whpx_sreg_match[i].reg, val);
+        }
+
+        if (whpx_sreg_match[i].reg == WHvArm64RegisterCntvctEl0) {
+            /*
+             * Match kvm_arm_cpu_post_load(): update the cached virtual time
+             * so the next VM resume writes the newly loaded value.
+             */
+            cpu->accel->vtime = val.Reg64;
+            cpu->accel->vtime_dirty = true;
         }
     }
 }
@@ -624,6 +691,13 @@ static uint32_t max_vcpu_index;
 
 static void whpx_cpu_update_state(void *opaque, bool running, RunState state)
 {
+    CPUState *cpu = opaque;
+
+    if (running) {
+        whpx_put_virtual_time(cpu);
+    } else {
+        whpx_get_virtual_time(cpu);
+    }
 }
 
 uint32_t whpx_arm_get_ipa_bit_size(void)
@@ -773,7 +847,7 @@ int whpx_init_vcpu(CPUState *cpu)
     cpu->vcpu_dirty = true;
     cpu->accel = g_new0(AccelCPUState, 1);
     max_vcpu_index = MAX(max_vcpu_index, cpu->cpu_index);
-    qemu_add_vm_change_state_handler(whpx_cpu_update_state, env);
+    qemu_add_vm_change_state_handler(whpx_cpu_update_state, cpu);
 
     env->aarch64 = true;
 
@@ -792,7 +866,8 @@ int whpx_init_vcpu(CPUState *cpu)
 
         ri = get_arm_cp_reginfo(arm_cpu->cp_regs, key);
         if (ri) {
-            assert(!(ri->type & (ARM_CP_NO_RAW | ARM_CP_CONST)));
+            assert(!(ri->type & (ARM_CP_NO_RAW | ARM_CP_CONST)) ||
+                   whpx_sreg_match[i].reg == WHvArm64RegisterCntvctEl0);
             whpx_sreg_match[i].cp_idx = sregs_cnt;
             arm_cpu->cpreg_indexes[sregs_cnt++] = cpreg_to_kvm_id(key);
         } else {
@@ -824,6 +899,7 @@ void whpx_cpu_instance_init(CPUState *cs)
 static void whpx_arm_system_reset(void *opaque)
 {
     struct whpx_state *whpx = opaque;
+    CPUState *cpu;
 
     if (whp_dispatch.WHvResetPartition) {
         /* Partition-wide reset, to reset non-architectural state for reboots to succeed. */
@@ -831,6 +907,9 @@ static void whpx_arm_system_reset(void *opaque)
         if (FAILED(hr)) {
             error_report("WHPX: Failed to reset partition, hr=%08lx", hr);
         }
+    }
+    CPU_FOREACH(cpu) {
+        cpu->accel->vtime = 0;
     }
 }
 
