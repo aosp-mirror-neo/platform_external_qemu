@@ -581,6 +581,28 @@ static void whpx_get_virtual_time(CPUState *cpu)
     vcpu->vtime_dirty = true;
 }
 
+static uint64_t whpx_max_vtime(void)
+{
+    CPUState *other;
+    uint64_t max_cnt = 0;
+
+    CPU_FOREACH(other) {
+        max_cnt = MAX(max_cnt, other->accel->vtime);
+    }
+    return max_cnt;
+}
+
+static uint64_t whpx_max_saved_cntvct(int cp_idx)
+{
+    CPUState *other;
+    uint64_t max_cnt = 0;
+
+    CPU_FOREACH(other) {
+        max_cnt = MAX(max_cnt, ARM_CPU(other)->cpreg_values[cp_idx]);
+    }
+    return max_cnt;
+}
+
 static void whpx_put_virtual_time(CPUState *cpu)
 {
     AccelCPUState *vcpu = cpu->accel;
@@ -590,8 +612,14 @@ static void whpx_put_virtual_time(CPUState *cpu)
         return;
     }
 
+    /*
+     * Unlike KVM's VM-wide cntvoff, WHPX sets a per-vCPU counter offset, and
+     * the counter keeps advancing while stopped so sequential per-vCPU reads
+     * capture slightly different values. Restore the largest captured value on
+     * every vCPU (a written counter holds its value until the vCPU runs).
+     */
     clean_whv_register_value(&val);
-    val.Reg64 = vcpu->vtime;
+    val.Reg64 = whpx_max_vtime();
     whpx_set_reg(cpu, WHvArm64RegisterCntvctEl0, val);
     vcpu->vtime_dirty = false;
 }
@@ -698,7 +726,16 @@ void whpx_set_registers(CPUState *cpu, WHPXStateLevel level)
         }
 
         clean_whv_register_value(&val);
-        val.Reg64 = arm_cpu->cpreg_values[whpx_sreg_match[i].cp_idx];
+        if (whpx_sreg_match[i].reg == WHvArm64RegisterCntvctEl0) {
+            /*
+             * Restore the largest saved counter across all vCPUs so sequential
+             * read skew at save time does not turn into permanent per-vCPU
+             * offsets (which cause ~365 s arm64 vDSO jumps in userspace).
+             */
+            val.Reg64 = whpx_max_saved_cntvct(whpx_sreg_match[i].cp_idx);
+        } else {
+            val.Reg64 = arm_cpu->cpreg_values[whpx_sreg_match[i].cp_idx];
+        }
         if (whpx_sreg_match[i].global) {
             /* WHP disallows us from accessing global regs as a vCPU */
             whpx_set_global_reg(whpx_sreg_match[i].reg, val);
