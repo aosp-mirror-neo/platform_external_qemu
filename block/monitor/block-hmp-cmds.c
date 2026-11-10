@@ -889,7 +889,10 @@ void hmp_info_snapshots(Monitor *mon, const QDict *qdict)
 
     GRAPH_RDLOCK_GUARD_MAINLOOP();
 
-    bs = bdrv_all_find_vmstate_bs(NULL, false, NULL, &err);
+    bs = bdrv_find_read_only_vmstate_bs(NULL);
+    if (!bs) {
+        bs = bdrv_all_find_vmstate_bs(NULL, false, NULL, &err);
+    }
     if (!bs) {
         hmp_handle_error(mon, err);
         return;
@@ -907,13 +910,17 @@ void hmp_info_snapshots(Monitor *mon, const QDict *qdict)
         ImageEntry *ie;
         SnapshotEntry *se;
 
-        if (bdrv_can_snapshot(bs1)) {
+        /*
+         * A read-only VM-state node can't take snapshots, but the snapshots
+         * it holds can still be loaded, so list it as well.
+         */
+        if (bdrv_can_snapshot(bs1) || (bs1 == bs && bdrv_is_read_only(bs))) {
             sn = NULL;
             bs1_nb_sns = bdrv_snapshot_list(bs1, &sn);
             if (bs1_nb_sns > 0) {
                 no_snapshot = false;
                 ie = g_new0(ImageEntry, 1);
-                ie->imagename = bdrv_get_device_name(bs1);
+                ie->imagename = bdrv_get_device_or_node_name(bs1);
                 QTAILQ_INIT(&ie->snapshots);
                 QTAILQ_INSERT_TAIL(&image_list, ie, next);
                 for (i = 0; i < bs1_nb_sns; i++) {
@@ -928,6 +935,7 @@ void hmp_info_snapshots(Monitor *mon, const QDict *qdict)
 
     if (no_snapshot) {
         monitor_printf(mon, "There is no snapshot available.\n");
+        g_free(sn_tab);
         return;
     }
 

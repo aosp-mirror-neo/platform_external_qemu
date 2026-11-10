@@ -62,7 +62,7 @@
       },
       "gmodule": {
         "lib_type": "bazel",
-        "bazel_target": "@glib//gmodule:gmodule_import",
+        "bazel_target": "@glib//gmodule",
         "version": "2.77.2",
         "shim": {
           "name": "gmodule-export-2.0",
@@ -77,7 +77,7 @@
       },
       "glib": {
         "lib_type": "bazel",
-        "bazel_target": "@glib//glib:glib_import",
+        "bazel_target": "@glib//glib",
         "version": "2.77.2",
         "shim": {
           "name": "glib-2.0",
@@ -345,15 +345,6 @@
     //   primarily for Windows.
     "shims": [
       {
-        "target": "qemu-system-.*|qemu-img",
-        "shims": {
-          "+dynamic_deps": [
-            "@glib//glib:glib_shared",
-            "@glib//gmodule:gmodule_shared"
-          ]
-        }
-      },
-      {
         // This will allow us to select the trace backend through bazel config settings.
         "target": "generate_trace-.*",
         "shims": {
@@ -521,10 +512,10 @@
     ],
     "external_deps": {
       "glib-2.0": [
-        "@glib//glib:glib_import"
+        "@glib//glib"
       ],
       "gmodule-export-2.0": [
-        "@glib//gmodule:gmodule_import"
+        "@glib//gmodule"
       ],
       "zlib": [
         "@zlib//:zlib"
@@ -572,7 +563,7 @@
         },
         "gmodule": {
           "lib_type": "bazel",
-          "bazel_target": "@glib//gmodule:gmodule_import",
+          "bazel_target": "@glib//gmodule",
           "version": "2.77.2",
           "shim": {
             "name": "gmodule-export-2.0",
@@ -667,7 +658,7 @@
       "dependencies": {
         "gmodule": {
           "lib_type": "bazel",
-          "bazel_target": "@glib//gmodule:gmodule_import",
+          "bazel_target": "@glib//gmodule",
           "version": "2.77.2",
           "shim": {
             "name": "gmodule-export-2.0",
@@ -748,7 +739,7 @@
       "dependencies": {
         "gmodule": {
           "lib_type": "bazel",
-          "bazel_target": "@glib//gmodule:gmodule_import",
+          "bazel_target": "@glib//gmodule",
           "version": "2.77.2",
           "shim": {
             "name": "gmodule-export-2.0",
@@ -758,7 +749,7 @@
         },
         "glib": {
           "lib_type": "bazel",
-          "bazel_target": "@glib//glib:glib_import",
+          "bazel_target": "@glib//glib",
           "version": "2.77.2",
           "shim": {
             "name": "glib-2.0",
@@ -838,7 +829,7 @@
       "dependencies": {
         "gmodule": {
           "lib_type": "bazel",
-          "bazel_target": "@glib//gmodule:gmodule_import",
+          "bazel_target": "@glib//gmodule",
           "version": "2.77.2",
           "shim": {
             "name": "gmodule-export-2.0",
@@ -848,7 +839,7 @@
         },
         "glib": {
           "lib_type": "bazel",
-          "bazel_target": "@glib//glib:glib_import",
+          "bazel_target": "@glib//glib",
           "version": "2.77.2",
           "shim": {
             "name": "glib-2.0",
@@ -928,7 +919,7 @@
       "dependencies": {
         "gmodule": {
           "lib_type": "bazel",
-          "bazel_target": "@glib//gmodule:gmodule_import",
+          "bazel_target": "@glib//gmodule",
           "version": "2.77.2",
           "shim": {
             "name": "gmodule-export-2.0",
@@ -937,7 +928,7 @@
         },
         "glib": {
           "lib_type": "bazel",
-          "bazel_target": "@glib//glib:glib_import",
+          "bazel_target": "@glib//glib",
           "version": "2.77.2",
           "shim": {
             "name": "glib-2.0",
@@ -1059,8 +1050,8 @@
       ],
       "external_deps": {
         "glib-2.0": [
-          "@glib//glib:glib_import",
-          "@glib//gmodule:gmodule_import"
+          "@glib//glib",
+          "@glib//gmodule"
         ]
       },
       "export": [
@@ -1073,7 +1064,7 @@
       "dependencies": {
         "gmodule": {
           "lib_type": "bazel",
-          "bazel_target": "@glib//gmodule:gmodule_import",
+          "bazel_target": "@glib//gmodule",
           "version": "2.77.2",
           "shim": {
             "name": "gmodule-export-2.0",
@@ -1082,7 +1073,7 @@
         },
         "glib": {
           "lib_type": "bazel",
-          "bazel_target": "@glib//glib:glib_import",
+          "bazel_target": "@glib//glib",
           "version": "2.77.2",
           "shim": {
             "name": "glib-2.0",
@@ -1202,8 +1193,8 @@
       ],
       "external_deps": {
         "glib-2.0": [
-          "@glib//glib:glib_import",
-          "@glib//gmodule:gmodule_import"
+          "@glib//glib",
+          "@glib//gmodule"
         ]
       },
       "export": [

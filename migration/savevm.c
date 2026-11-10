@@ -3454,6 +3454,11 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
         return false;
     }
 
+    bs = bdrv_all_find_vmstate_bs(vmstate, has_devices, devices, errp);
+    if (bs == NULL) {
+        return false;
+    }
+
     /* Delete old snapshots of the same name */
     if (name) {
         if (overwrite) {
@@ -3473,11 +3478,6 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
                 return false;
             }
         }
-    }
-
-    bs = bdrv_all_find_vmstate_bs(vmstate, has_devices, devices, errp);
-    if (bs == NULL) {
-        return false;
     }
 
     global_state_store();
@@ -3626,6 +3626,7 @@ void qmp_xen_load_devices_state(const char *filename, Error **errp)
 bool load_snapshot(const char *name, const char *vmstate,
                    bool has_devices, strList *devices, Error **errp)
 {
+    ERRP_GUARD();
     BlockDriverState *bs_vm_state;
     QEMUSnapshotInfo sn;
     QEMUFile *f;
@@ -3649,7 +3650,17 @@ bool load_snapshot(const char *name, const char *vmstate,
         return false;
     }
 
-    bs_vm_state = bdrv_all_find_vmstate_bs(vmstate, has_devices, devices, errp);
+    /*
+     * A read-only VM state node (e.g. a snapshot image shared between many
+     * runs) is not part of the bdrv_all_* group, so it is neither required to
+     * be writable nor reverted; its VM state is read through a temporarily
+     * loaded snapshot L1 table instead.
+     */
+    bs_vm_state = has_devices ? NULL : bdrv_find_read_only_vmstate_bs(vmstate);
+    if (!bs_vm_state) {
+        bs_vm_state = bdrv_all_find_vmstate_bs(vmstate, has_devices, devices,
+                                               errp);
+    }
     if (!bs_vm_state) {
         return false;
     }
@@ -3680,6 +3691,15 @@ bool load_snapshot(const char *name, const char *vmstate,
     ret = bdrv_all_goto_snapshot(name, has_devices, devices, errp);
     if (ret < 0) {
         goto err_drain;
+    }
+
+    if (bdrv_is_read_only(bs_vm_state)) {
+        ret = bdrv_snapshot_load_tmp(bs_vm_state, sn.id_str, sn.name, errp);
+        if (ret < 0) {
+            error_prepend(errp, "Could not load snapshot '%s' on '%s': ",
+                          sn.name, bdrv_get_node_name(bs_vm_state));
+            goto err_drain;
+        }
     }
 
     /* restore the VM state */
@@ -3727,6 +3747,15 @@ bool delete_snapshot(const char *name, bool has_devices,
                      strList *devices, Error **errp)
 {
     if (!bdrv_all_can_snapshot(has_devices, devices, errp)) {
+        return false;
+    }
+    /*
+     * Deleting a whole-VM snapshot must not leave its VM state behind, so
+     * fail before touching any disk if the VM-state node can't be written
+     * (e.g. it was attached read-only).  An explicit device list only
+     * names the nodes to delete from.
+     */
+    if (!has_devices && !bdrv_all_find_vmstate_bs(NULL, false, NULL, errp)) {
         return false;
     }
 

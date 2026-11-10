@@ -2,7 +2,7 @@ load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "objc_library")
 load("@rules_license//rules:license.bzl", "license")
 load("@rules_python//python:defs.bzl", "py_binary")
-load("google/build/cc_interface_binary.bzl", "cc_interface_binary")
+load("google/build/cc_interface_binary.bzl", "cc_headers_only", "cc_interface_binary")
 load(
     "google/build/qtest.bzl",
     "QTEST_COPTS",
@@ -82,6 +82,8 @@ cc_library(
 cc_library(
     name = "qemu-headers",
     hdrs = [
+        "audio/audio_int.h",
+        "audio/mixeng.h",
         "config-poison.h",
         "generate_shared_QAPI_source_files",
         "google/drivers/hw/acpi/goldfish_defs.h",
@@ -281,8 +283,8 @@ cc_library(
         "//conditions:default": [],
     }),
     deps = [
-        "@glib//glib:glib_import",
-        "@glib//gmodule:gmodule_import",
+        "@glib//glib",
+        "@glib//gmodule",
         "@libslirp//:headers",
     ] + select({
         "@platforms//os:windows": ["@aemu//windows:compat-hdrs"],
@@ -292,6 +294,24 @@ cc_library(
     }),
 )
 
+# Provides GLib and GModule headers and compile defines without propagating
+# static archive link inputs, so shared-library plugins (such as libgoldfish)
+# resolve GLib symbols from the host qemu-system-* executable and avoid ODR
+# violations across dynamic library boundaries.
+cc_headers_only(
+    name = "glib-headers",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@glib//glib",
+        "@glib//gmodule",
+    ],
+)
+
+cc_headers_only(
+    name = "qemu-headers-only",
+    deps = [":qemu-headers"],
+)
+
 cc_library(
     name = "qemu-headers-exported",
     defines = ["QEMU_HEADERS_EXPORT"] + select({
@@ -299,7 +319,7 @@ cc_library(
         "//conditions:default": [],
     }),
     visibility = ["//visibility:public"],
-    deps = [":qemu-headers"],
+    deps = [":qemu-headers-only"],
 )
 
 cc_library(
@@ -393,6 +413,12 @@ config_setting(
 config_setting(
     name = "goldfish_enabled",
     flag_values = {":trace_backend": "goldfish"},
+)
+
+config_setting(
+    name = "tsan",
+    values = {"features": "tsan"},
+    visibility = ["//visibility:public"],
 )
 
 TRACE_BACKEND = select({
