@@ -537,6 +537,35 @@ static WHPXStateLevel whpx_sreg_level(WHV_REGISTER_NAME reg)
     }
 }
 
+/*
+ * Hyper-V handles guest PSCI CPU_ON/CPU_OFF internally and parks powered-off
+ * vCPUs inside WHvRunVirtualProcessor() via StartupSuspend; with kernel
+ * irqchip enabled, whpx_vcpu_thread_is_idle() is false, so ARMCPU::power_state
+ * is unused at runtime and goes stale once secondary CPUs boot.
+ *
+ * Sync StartupSuspend <-> power_state (matching kvm_arm_sync_mpstate_to_*())
+ * for reset and vmstate "power_state" save/load, never at runtime where QEMU's
+ * stale PSCI_OFF would re-suspend an online secondary vCPU.
+ */
+static void whpx_sync_mpstate_to_qemu(ARMCPU *arm_cpu)
+{
+    WHV_REGISTER_VALUE val;
+
+    clean_whv_register_value(&val);
+    whpx_get_reg(CPU(arm_cpu), WHvRegisterInternalActivityState, &val);
+    arm_cpu->power_state =
+        val.InternalActivity.StartupSuspend ? PSCI_OFF : PSCI_ON;
+}
+
+static void whpx_sync_mpstate_to_whpx(ARMCPU *arm_cpu)
+{
+    WHV_REGISTER_VALUE val;
+
+    clean_whv_register_value(&val);
+    val.InternalActivity.StartupSuspend = arm_cpu->power_state == PSCI_OFF;
+    whpx_set_reg(CPU(arm_cpu), WHvRegisterInternalActivityState, val);
+}
+
 static void whpx_get_virtual_time(CPUState *cpu)
 {
     AccelCPUState *vcpu = cpu->accel;
@@ -620,6 +649,7 @@ void whpx_get_registers(CPUState *cpu, WHPXStateLevel level)
 
     assert(write_list_to_cpustate(arm_cpu));
     aarch64_restore_sp(env, arm_current_el(env));
+    whpx_sync_mpstate_to_qemu(arm_cpu);
 }
 
 void whpx_set_registers(CPUState *cpu, WHPXStateLevel level)
@@ -684,6 +714,10 @@ void whpx_set_registers(CPUState *cpu, WHPXStateLevel level)
             cpu->accel->vtime = val.Reg64;
             cpu->accel->vtime_dirty = true;
         }
+    }
+
+    if (level >= WHPX_LEVEL_RESET_STATE) {
+        whpx_sync_mpstate_to_whpx(arm_cpu);
     }
 }
 
