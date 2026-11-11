@@ -948,6 +948,14 @@ message AndroidStudioEvent {
   // set when kind = IMPORT_PROJECT_EVENT
   optional ImportProjectEvent import_project_event = 265 [lazy = true];
 
+  // set when kind = EXTERNAL_UPDATE_MANAGER_EVENT
+  optional ExternalUpdateManagerEvent external_update_manager_event = 266
+      [lazy = true];
+
+  // set when kind = IN_MEMORY_COMPOSE_PREVIEW_TOOL_EVENT
+  optional InMemoryComposePreviewToolEvent
+      in_memory_compose_preview_tool_event = 267 [lazy = true];
+
   enum EventCategory {
     // The event was not grouped into any specific category (default).
     NO_EVENT_CATEGORY = 0;
@@ -2024,6 +2032,12 @@ message AndroidStudioEvent {
     // Event related to Import Project Agent (e.g. from iOS, React Native,
     // Flutter to Android / KMP)
     IMPORT_PROJECT_EVENT = 392;
+
+    // Event related to external updaters
+    EXTERNAL_UPDATE_MANAGER_EVENT = 393;
+
+    // Event related to the In-Memory Compose Preview Tool API.
+    IN_MEMORY_COMPOSE_PREVIEW_TOOL_EVENT = 394;
   }
 
   // Represents different Performance Monitoring types.
@@ -3400,6 +3414,8 @@ message EmulatorAvdInfo {
     PIXEL_10A = 61;
     PIXEL_11_PRO_FOLD = 62;
     AI_GLASSES_AUDIO_DEVICE = 63;
+    FOLDABLE_4_3 = 64;
+    FOLDABLE_1_1 = 65;
   }
   // Name of the AVD. Deprecated as it could potentially contain PII.
   optional string name = 1 [deprecated = true];
@@ -9421,6 +9437,9 @@ message SherlockEvent {
   optional DeviceTaskEventMetadata device_task_event_metadata = 14
       [lazy = true];
 
+  // Set if |type| is |APK_INSTALL_COMPLETED|
+  optional ApkInstallMetadata apk_install_metadata = 15 [lazy = true];
+
   enum Type {
     UNKNOWN_TYPE = 0;
 
@@ -9428,6 +9447,7 @@ message SherlockEvent {
     DEVICE_INITIALIZED = 101;
     SHERLOCK_PROJECT_OPENED = 102;
     SHERLOCK_PROJECT_CLOSED = 103;
+    APK_INSTALL_COMPLETED = 104;
 
     /// System Trace recording.
 
@@ -9543,11 +9563,142 @@ message SherlockEvent {
     enum DeviceInitializationStage {
       DEVICE_INITIALIZATION_STAGE_UNKNOWN = 0;
       DEVICE_INITIALIZATION_STAGE_SDK_CHECK = 1;
+      // Deprecated: superseded by the more specific DEVICE_PROPERTIES, APA_APK
+      // and GFXR_APK stages below. Still emitted by older Sherlock versions.
       DEVICE_INITIALIZATION_STAGE_APKS = 2;
       DEVICE_INITIALIZATION_STAGE_PACKAGES = 3;
       DEVICE_INITIALIZATION_STAGE_DEVICE_DETAILS = 4;
       DEVICE_INITIALIZATION_STAGE_PERFETTO_CAPABILITIES = 5;
       DEVICE_INITIALIZATION_STAGE_GPU_COUNTERS = 6;
+      DEVICE_INITIALIZATION_STAGE_DEVICE_PROPERTIES = 7;
+      DEVICE_INITIALIZATION_STAGE_APA_APK = 8;
+      DEVICE_INITIALIZATION_STAGE_GFXR_APK = 9;
+    }
+  }
+
+  // Metadata for the |APK_INSTALL_COMPLETED| event.
+  // Logged once per attempt to install one of the APKs bundled with Sherlock
+  // (the APA helper APK and the GFXR replay APK) on a device.
+  message ApkInstallMetadata {
+    optional ExtendedDeviceInfo extended_device_info = 1;
+
+    // Which of Sherlock's bundled APKs was being installed.
+    optional Apk apk = 2;
+
+    // Outcome of the install attempt.
+    optional ApkInstallStatus status = 3;
+
+    // What kind of install was needed.
+    optional ApkInstallKind kind = 4;
+
+    // Set if |status| is |APK_INSTALL_STATUS_ERROR|: the step that failed.
+    optional ApkInstallStep failed_step = 5;
+
+    // Set if |status| is |APK_INSTALL_STATUS_ERROR|: why |failed_step| failed.
+    optional ApkInstallFailureCause failure_cause = 6;
+
+    // Set if |failed_step| is |APK_INSTALL_STEP_PM_INSTALL|: the error code
+    // reported by `pm install` (e.g. INSTALL_FAILED_UPDATE_INCOMPATIBLE).
+    optional PmInstallError pm_install_error = 7;
+
+    // Wall-clock duration of the whole install attempt in milliseconds.
+    optional int32 duration_ms = 8;
+
+    // True if a different version of the APK was already on the device and
+    // uninstalling it failed. Sherlock still attempts `pm install -d`
+    // afterwards, so this is a likely explanation for a subsequent
+    // |failed_step| of |APK_INSTALL_STEP_PM_INSTALL|.
+    optional bool previous_uninstall_failed = 9;
+
+    enum Apk {
+      APK_UNKNOWN = 0;
+      // The Android Performance Analyzer helper APK.
+      APK_APA = 1;
+      // The GFXReconstruct replay APK used by the frame profiler.
+      APK_GFXR_REPLAY = 2;
+    }
+
+    enum ApkInstallStatus {
+      APK_INSTALL_STATUS_UNKNOWN = 0;
+      APK_INSTALL_STATUS_SUCCESS = 1;
+      APK_INSTALL_STATUS_ERROR = 2;
+      APK_INSTALL_STATUS_CANCELLED = 3;
+    }
+
+    enum ApkInstallKind {
+      APK_INSTALL_KIND_UNKNOWN = 0;
+      // The same APK was already on the device; nothing was installed.
+      APK_INSTALL_KIND_SKIPPED_UP_TO_DATE = 1;
+      // The package was not on the device; installed from scratch.
+      APK_INSTALL_KIND_FRESH = 2;
+      // A different version was on the device; uninstalled then installed.
+      APK_INSTALL_KIND_REINSTALL = 3;
+    }
+
+    // The steps of an install attempt, in execution order.
+    enum ApkInstallStep {
+      APK_INSTALL_STEP_UNKNOWN = 0;
+      // Querying whether the package is already installed and where.
+      APK_INSTALL_STEP_QUERY_PACKAGE = 1;
+      // Hashing the APK on the device and on the host.
+      APK_INSTALL_STEP_HASH_CHECK = 2;
+      // Uninstalling a previous version of the package.
+      APK_INSTALL_STEP_UNINSTALL = 3;
+      // Pushing the APK file to the device.
+      APK_INSTALL_STEP_PUSH = 4;
+      // Running `pm install`.
+      APK_INSTALL_STEP_PM_INSTALL = 5;
+      // Deleting the pushed APK file from the device.
+      APK_INSTALL_STEP_CLEANUP = 6;
+      // Granting app-ops permissions (`appops set`).
+      APK_INSTALL_STEP_GRANT_APPOPS = 7;
+      // Granting runtime permissions (`pm grant`).
+      APK_INSTALL_STEP_GRANT_PM_PERMISSIONS = 8;
+    }
+
+    enum ApkInstallFailureCause {
+      APK_INSTALL_FAILURE_CAUSE_UNKNOWN = 0;
+      // An adb shell command exited with a non-zero code.
+      APK_INSTALL_FAILURE_CAUSE_SHELL_COMMAND_FAILED = 1;
+      // The device went offline during the attempt.
+      APK_INSTALL_FAILURE_CAUSE_DEVICE_DISCONNECTED = 2;
+      APK_INSTALL_FAILURE_CAUSE_TIMEOUT = 3;
+      // The APK bundled with Sherlock could not be found on the host.
+      APK_INSTALL_FAILURE_CAUSE_HOST_FILE_MISSING = 4;
+    }
+
+    // Error codes reported by `pm install`. Mirrors the INSTALL_FAILED_* /
+    // INSTALL_PARSE_FAILED_* constants in
+    // android.content.pm.PackageManager, limited to the codes Sherlock
+    // expects to see; everything else maps to PM_INSTALL_ERROR_OTHER.
+    enum PmInstallError {
+      PM_INSTALL_ERROR_UNKNOWN = 0;
+      // A failure code not listed below.
+      PM_INSTALL_ERROR_OTHER = 1;
+      PM_INSTALL_ERROR_ALREADY_EXISTS = 2;
+      PM_INSTALL_ERROR_INVALID_APK = 3;
+      PM_INSTALL_ERROR_INSUFFICIENT_STORAGE = 4;
+      PM_INSTALL_ERROR_UPDATE_INCOMPATIBLE = 5;
+      PM_INSTALL_ERROR_SHARED_USER_INCOMPATIBLE = 6;
+      PM_INSTALL_ERROR_MISSING_SHARED_LIBRARY = 7;
+      PM_INSTALL_ERROR_OLDER_SDK = 8;
+      PM_INSTALL_ERROR_NEWER_SDK = 9;
+      PM_INSTALL_ERROR_CONFLICTING_PROVIDER = 10;
+      PM_INSTALL_ERROR_TEST_ONLY = 11;
+      PM_INSTALL_ERROR_CPU_ABI_INCOMPATIBLE = 12;
+      PM_INSTALL_ERROR_NO_MATCHING_ABIS = 13;
+      PM_INSTALL_ERROR_VERIFICATION_FAILURE = 14;
+      PM_INSTALL_ERROR_USER_RESTRICTED = 15;
+      PM_INSTALL_ERROR_VERSION_DOWNGRADE = 16;
+      PM_INSTALL_ERROR_INTERNAL_ERROR = 17;
+      PM_INSTALL_ERROR_ABORTED = 18;
+      // Any INSTALL_PARSE_FAILED_* code other than the certificate ones.
+      PM_INSTALL_ERROR_PARSE_FAILED = 19;
+      // INSTALL_PARSE_FAILED_NO_CERTIFICATES or
+      // INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES.
+      PM_INSTALL_ERROR_BAD_CERTIFICATES = 20;
+      PM_INSTALL_ERROR_UID_CHANGED = 21;
+      PM_INSTALL_ERROR_PERMISSION_MODEL_DOWNGRADE = 22;
     }
   }
 
@@ -13688,6 +13839,47 @@ message RenderToolEvent {
   // Quantitative metrics to understand project health
   optional int32 missing_classes_count = 11;
   optional int32 broken_classes_count = 12;
+
+  enum ToolType {
+    UNKNOWN_TOOL_TYPE = 0;
+    // File-backed render_compose_preview tool (RenderComposePreviewTool).
+    RENDER_COMPOSE_PREVIEW = 1;
+    // In-memory show_in_memory_compose_preview tool
+    // (ShowInMemoryComposePreviewTool).
+    SHOW_IN_MEMORY_COMPOSE_PREVIEW = 2;
+  }
+
+  // Which Compose render tool produced this event.
+  // Deprecated in favor of InMemoryComposePreviewToolEvent.
+  optional ToolType tool_type = 13 [deprecated = true];
+}
+
+/**
+ * Logged when the show_in_memory_compose_preview agent tool executes.
+ * Captures both tool-call-level metrics (overall success, compilation duration,
+ * end-to-end tool latency) and per-preview RenderToolEvents for each discovered
+ * @Preview function in the in-memory Kotlin snippet.
+ */
+message InMemoryComposePreviewToolEvent {
+  // Whether the tool call succeeded overall (at least one preview rendered).
+  optional bool is_success = 1;
+
+  // Set if the tool call failed before rendering any previews (e.g.,
+  // ERROR_FILE_NOT_FOUND, ERROR_BLOCKED_BY_AI_EXCLUDE, ERROR_MODULE_NOT_FOUND,
+  // ERROR_COMPILATION_FAILED, ERROR_COMPONENT_NOT_FOUND).
+  optional RenderToolEvent.RenderError render_error = 2;
+
+  // Time spent compiling the in-memory Kotlin snippet via FastPreviewManager.
+  optional int64 compilation_duration_ms = 3;
+
+  // End-to-end wall-clock time for the entire tool call (compilation + all
+  // preview renders).
+  optional int64 total_latency_ms = 4;
+
+  // One RenderToolEvent per discovered @Preview in the snippet, recording
+  // each individual preview's is_success, render_error, total_latency_ms,
+  // primary_exception_class, missing_classes_count, and broken_classes_count.
+  repeated RenderToolEvent preview_events = 5;
 }
 
 /**
@@ -14899,11 +15091,28 @@ message DeviceManagerEvent {
 }
 
 // Event related to Glasses emulator pairing assistant
-// Next ID: 32
+// Next field ID: 9
 message GlassesPairingEvent {
   // The kind of GlassesPairingEvent
   optional EventKind kind = 1;
+  // Random per-attempt UUID generated by the wizard; joins milestone events of
+  // one attempt.
+  optional string pairing_attempt_id = 2;
+  // How the pairing wizard was launched.
+  optional LaunchTrigger launch_trigger = 3;
+  // How the target device was selected on the wizard selection page.
+  optional SelectionSource selection_source = 4;
+  // Structured sub-reason for a pairing or unpair failure.
+  optional FailureSubReason failure_sub_reason = 5;
+  // Which silent reconciliation branch resolved an asymmetric pairing state.
+  optional AsymmetricResolutionReason asymmetric_resolution_reason = 6;
+  // Entry point that triggered an unpair operation.
+  optional UnpairSource unpair_source = 7;
+  // True when the wizard had to tap the Companion window to bring it to the
+  // foreground.
+  optional bool focus_tap_workaround_used = 8;
   // The kind of GlassesPairingEvent
+  // Next EventKind ID: 45
   enum EventKind {
     // Default kind
     UNSPECIFIED = 0;
@@ -14969,6 +15178,150 @@ message GlassesPairingEvent {
     CASCADING_WIPE_INITIATED = 30;
     // Orphaned pairing purged
     ORPHANED_PAIRING_PURGED = 31;
+    // Both emulators finished booting and are ready for companion setup
+    PAIRING_EMULATORS_READY = 32;
+    // Wizard is waiting for the Companion app to reach the foreground
+    PAIRING_AWAITING_COMPANION_FOREGROUND = 33;
+    // Companion worker started Bluetooth bonding
+    PAIRING_BONDING_STARTED = 34;
+    // Companion worker is waiting for the nearby-device streaming role grant
+    PAIRING_STREAMING_ROLE_REQUIRED = 35;
+    // User closed or cancelled the pairing wizard before reaching a terminal
+    // state
+    PAIRING_WIZARD_CANCELLED_BY_USER = 36;
+    // No compatible phone or glasses AVD was available on the selection page
+    PAIRING_NO_COMPATIBLE_DEVICE_SHOWN = 37;
+    // Automatic silent retry of the pairing flow was triggered
+    PAIRING_SILENT_RETRY_TRIGGERED = 38;
+    // Error: Glasses Core connection failed on the phone
+    PAIRING_ERROR_GLASSES_CORE_CONNECTION_FAILED = 39;
+    // Error: Updating the AVD host configuration (.ini) failed after pairing
+    HOST_CONFIG_WRITE_FAILED = 40;
+    // Reconciliation Bluetooth bond probe timed out
+    RECONCILIATION_PROBE_TIMEOUT = 41;
+    // Reconciliation cycle encountered an unexpected error
+    RECONCILIATION_CYCLE_ERROR = 42;
+    // Companion CDM association prompt was rejected or dismissed on the phone
+    PAIRING_CDM_PROMPT_DISMISSED = 43;
+    // User declined the re-pair warning dialog before or during wizard launch
+    PAIRING_REPAIR_WARNING_DECLINED = 44;
+  }
+  // How the pairing wizard was launched.
+  enum LaunchTrigger {
+    LAUNCH_TRIGGER_UNSPECIFIED = 0;
+    // Auto-launched by the provisioner after booting an unpaired glasses AVD
+    LAUNCH_TRIGGER_AUTO_LAUNCH = 1;
+    // Explicitly opened by the user from Device Manager or toolbar action
+    LAUNCH_TRIGGER_MANUAL = 2;
+    // Launched via the re-pair warning flow
+    LAUNCH_TRIGGER_REPAIR = 3;
+  }
+  // How the target device was selected on the wizard selection page.
+  enum SelectionSource {
+    SELECTION_SOURCE_UNSPECIFIED = 0;
+    // User explicitly clicked a row in the device list
+    SELECTION_SOURCE_USER_PICKED = 1;
+    // User kept the automatically selected default device
+    SELECTION_SOURCE_DEFAULT_ACCEPTED = 2;
+    // Target device was preselected when launching the wizard
+    SELECTION_SOURCE_PRESELECTED = 3;
+  }
+  // Structured sub-reason for a pairing or unpair failure.
+  enum FailureSubReason {
+    FAILURE_SUB_REASON_UNSPECIFIED = 0;
+    // Companion app did not reach the foreground within the polling cap
+    FAILURE_SUB_REASON_FOREGROUND_TIMEOUT = 1;
+    // Companion broadcast returned an unreadable or missing pairing state
+    FAILURE_SUB_REASON_STATE_UNREADABLE = 2;
+    // Companion remained in IDLE state across the polling cap
+    FAILURE_SUB_REASON_IDLE_TIMEOUT = 3;
+    // User rejected the Companion Device Manager prompt on the phone
+    FAILURE_SUB_REASON_CDM_USER_REJECTED = 4;
+    // Companion Device Manager prompt was dismissed or canceled
+    FAILURE_SUB_REASON_CDM_CANCELED = 5;
+    // Studio reached its CDM association polling cap without a bond
+    FAILURE_SUB_REASON_CDM_POLL_CAP_REACHED = 6;
+    // Companion's internal pairing timeout expired while waiting for Glasses
+    // Core
+    FAILURE_SUB_REASON_COMPANION_TIMEOUT = 7;
+    // Unexpected exception during the Companion Glasses Core connection step
+    FAILURE_SUB_REASON_UNEXPECTED_ERROR = 8;
+    // Glasses Core PairingError.REMOTE_EXCEPTION
+    FAILURE_SUB_REASON_GC_REMOTE_EXCEPTION = 9;
+    // Glasses Core PairingError.MISSING_PERMISSIONS
+    FAILURE_SUB_REASON_GC_MISSING_PERMISSIONS = 10;
+    // Glasses Core PairingError.ALREADY_CONNECTED
+    FAILURE_SUB_REASON_GC_ALREADY_CONNECTED = 11;
+    // Glasses Core PairingError.UNKNOWN_DEVICE
+    FAILURE_SUB_REASON_GC_UNKNOWN_DEVICE = 12;
+    // Glasses Core PairingError.TIMEOUT
+    FAILURE_SUB_REASON_GC_TIMEOUT = 13;
+    // Glasses Core PairingError.FAILED_TO_CREATE_CDM_ASSOCIATION
+    FAILURE_SUB_REASON_GC_FAILED_TO_CREATE_CDM_ASSOCIATION = 14;
+    // Glasses Core PairingError.PAIRING_REFUSED
+    FAILURE_SUB_REASON_GC_PAIRING_REFUSED = 15;
+    // Glasses Core PairingError.GLASSES_VERIFICATION_FAILED_BYPASS_ALLOWED
+    FAILURE_SUB_REASON_GC_GLASSES_VERIFICATION_FAILED_BYPASS_ALLOWED = 16;
+    // Glasses Core PairingError.GLASSES_VERIFICATION_FAILED_BYPASS_NOT_ALLOWED
+    FAILURE_SUB_REASON_GC_GLASSES_VERIFICATION_FAILED_BYPASS_NOT_ALLOWED = 17;
+    // Glasses Core PairingError.UPDATE_GLASSES_CORE
+    FAILURE_SUB_REASON_GC_UPDATE_GLASSES_CORE = 18;
+    // Glasses Core PairingError.CANCELLED_BY_USER
+    FAILURE_SUB_REASON_GC_CANCELLED_BY_USER = 19;
+    // Glasses Core PairingError.INVALID_PAIRING_RESPONSE
+    FAILURE_SUB_REASON_GC_INVALID_PAIRING_RESPONSE = 20;
+    // Glasses Core PairingError.UNKNOWN (or unrecognized numeric code)
+    FAILURE_SUB_REASON_GC_UNKNOWN = 21;
+    // Glasses Core PairingError.BLUETOOTH_OFF
+    FAILURE_SUB_REASON_GC_BLUETOOTH_OFF = 22;
+    // Glasses Core PairingError.ALREADY_CONNECTING_SAME_DEVICE
+    FAILURE_SUB_REASON_GC_ALREADY_CONNECTING_SAME_DEVICE = 23;
+    // Glasses Core PairingError.ALREADY_CONNECTING_DIFFERENT_DEVICE
+    FAILURE_SUB_REASON_GC_ALREADY_CONNECTING_DIFFERENT_DEVICE = 24;
+    // Glasses Core PairingError.GLASSES_HIBERNATED
+    FAILURE_SUB_REASON_GC_GLASSES_HIBERNATED = 25;
+    // Glasses Core PairingError.DISPLAYLESS_DEVICE_A2DP_DISABLED
+    FAILURE_SUB_REASON_GC_DISPLAYLESS_DEVICE_A2DP_DISABLED = 26;
+    // Glasses Core PairingError.DISPLAYLESS_DEVICE_HFP_DISABLED
+    FAILURE_SUB_REASON_GC_DISPLAYLESS_DEVICE_HFP_DISABLED = 27;
+    // Glasses Core PairingError.CANCELLED_BY_NEW_PAIRING_REQUEST
+    FAILURE_SUB_REASON_GC_CANCELLED_BY_NEW_PAIRING_REQUEST = 28;
+    // Glasses Core PairingError.INTERNET_CONNECTION_REQUIRED
+    FAILURE_SUB_REASON_GC_INTERNET_CONNECTION_REQUIRED = 29;
+    // Glasses Core PairingError.DISCONNECTED_DURING_PAIRING
+    FAILURE_SUB_REASON_GC_DISCONNECTED_DURING_PAIRING = 30;
+    // Unpair failed while stopping a running AVD
+    FAILURE_SUB_REASON_STOP_AVD_FAILED = 31;
+    // Unpair failed while wiping AVD data
+    FAILURE_SUB_REASON_WIPE_DATA_FAILED = 32;
+    // Unpair failed while updating host configuration (.ini)
+    FAILURE_SUB_REASON_HOST_CONFIG_UPDATE_FAILED = 33;
+  }
+  // Which silent reconciliation branch resolved an asymmetric pairing state.
+  enum AsymmetricResolutionReason {
+    ASYMMETRIC_RESOLUTION_REASON_UNSPECIFIED = 0;
+    // Glasses AVD reported zero Bluetooth bonds; pruned stale pairing linkage
+    ASYMMETRIC_RESOLUTION_REASON_GLASSES_ZERO_BONDS_PRUNED = 1;
+    // Phone had zero bonds and glasses had no recorded MAC; pruned linkage
+    ASYMMETRIC_RESOLUTION_REASON_MISSING_MAC_PRUNED = 2;
+    // Backfilled missing Bluetooth MAC address on tracked pairing
+    ASYMMETRIC_RESOLUTION_REASON_MISSING_MAC_BACKFILLED = 3;
+    // Pruned stale phone reference after phone AVD was deleted or wiped
+    ASYMMETRIC_RESOLUTION_REASON_STALE_PHONE_REF_PRUNED = 4;
+  }
+  // Entry point that triggered an unpair operation.
+  enum UnpairSource {
+    UNPAIR_SOURCE_UNSPECIFIED = 0;
+    // User clicked Unpair in Device Manager menu
+    UNPAIR_SOURCE_USER_MENU = 1;
+    // Unpair triggered inside the pairing wizard to re-pair
+    UNPAIR_SOURCE_WIZARD_REPAIR = 2;
+    // Unpair triggered by wiping an AVD
+    UNPAIR_SOURCE_AVD_WIPE = 3;
+    // Unpair triggered by deleting an AVD
+    UNPAIR_SOURCE_AVD_DELETE = 4;
+    // Unpair triggered by a cascading wipe
+    UNPAIR_SOURCE_CASCADING_WIPE = 5;
   }
 }
 
@@ -17927,8 +18280,8 @@ message SmlChatBotEvent {
 }
 
 message GeminiTelemetryEvent {
-  // The envelope holds metadata about the event, such as the model ID,
-  // provider Id, etc.,
+  // The envelope holds metadata about the event, such as the trajectory ids,
+  // the agent (built-in or ACP) and the model used.
   optional EventEnvelope envelope = 1;
 
   oneof domain {
@@ -17950,6 +18303,8 @@ message GeminiTelemetryEvent {
   // ties together events belonging to the same conversation.
   // For all events, the trajectory_id in the EventEnvelope ties together
   // events belonging to the same agent (or sub-agent) interaction.
+  // For all events, the user_query_id in the EventEnvelope ties together
+  // events belonging to the same user query turn.
   message EventEnvelope {
     // Trajectory id of the event.
     optional string trajectory_id = 1;
@@ -17966,11 +18321,13 @@ message GeminiTelemetryEvent {
     optional string server_trace_id = 6;
 
     // Provider ID of the model used for this event.
+    // Only set for the built-in agent (agent_info.agent_type == BUILT_IN);
+    // unset for ACP agents, which own their model provider.
     optional string model_provider_id = 7;
-    // Model ID of the model used for this event.
-    // Note: This will be deprecated soon in favor of `model` (field 12).
-    optional string model_id = 8;
+    // Deprecated: no longer populated by Studio. Use `model` (field 12).
+    optional string model_id = 8 [deprecated = true];
     // Whether the model is the default model.
+    // Currently not populated by Studio.
     optional bool is_default_model = 9;
 
     // Ties together events belonging to the same user query turn.
@@ -17980,7 +18337,14 @@ message GeminiTelemetryEvent {
     // Details of the agent (built-in or ACP) used for this event.
     optional AgentInfo agent_info = 11;
 
-    // Model used for this event, from the known model registry.
+    // Model used for this event, from the known model registry
+    // (google3/logs/proto/wireless/android/sdk/stats/model_registry.proto).
+    // - Built-in agent (agent_info.agent_type == BUILT_IN): the model selected
+    //   in Studio's model picker.
+    // - ACP agents: the agent's current model, as reported through its ACP
+    //   `model` config option.
+    // Model ids that do not match a registry entry are reported with the
+    // provider's `*_UNKNOWN` value or `MODEL_UNKNOWN`.
     optional Model model = 12;
   }
 
@@ -18002,8 +18366,10 @@ message GeminiTelemetryEvent {
       ANTIGRAVITY = 4;
       // opencode
       OPENCODE = 5;
-      // copilot
+      // github-copilot-cli
       COPILOT = 6;
+      // jetski
+      JETSKI = 8;
       // All other agents.
       OTHER = 7;
     }
@@ -18012,18 +18378,25 @@ message GeminiTelemetryEvent {
     // agent names).
     optional AgentType agent_type = 1;
 
-    // Reported version from the ACP initialize handshake. Unset for BUILT_IN.
+    // Reported version from the ACP initialize handshake. Unset for BUILT_IN
+    // and for OTHER (custom agent version strings may be identifying).
     optional string agent_version = 2;
 
     // Negotiated ACP protocol version (e.g., 1 or 2). Unset for BUILT_IN.
     optional int32 acp_protocol_version = 3;
   }
 
+  // Metrics for one server request/response cycle.
+  // For the built-in agent, one RequestEvent/ResponseEvent pair is logged per
+  // model call. For ACP agents (see EventEnvelope.agent_info), one pair is
+  // logged per ACP `session/prompt` turn instead, since the external agent
+  // manages its own model calls and tool loop.
   message ServerEvent {
     optional RequestEvent request_event = 1;
     optional ResponseEvent response_event = 2;
 
     // Captures metrics for a Request in a step.
+    // For ACP agents, only the prompt sent on the wire is measured.
     message RequestEvent {
       // Number of messages in the history, including the user message and
       // system instructions.
@@ -18037,9 +18410,13 @@ message GeminiTelemetryEvent {
     }
 
     // Captures metrics for a Response in a step.
+    // For ACP agents, this covers the whole `session/prompt` turn: latency
+    // includes agent-side tool execution, and token counts are the per-turn
+    // totals reported by the agent in its prompt response.
     message ResponseEvent {
       // Network & Lifecycle
       // HTTP status code of the response.
+      // Currently not populated by Studio.
       optional int32 http_status_code = 1;
       // Latency from the start of the request to the moment it finishes
       // receiving the very last streamed chunk of the response.
@@ -18048,6 +18425,7 @@ message GeminiTelemetryEvent {
       // chunk of the response.
       optional int64 ttfc_ms = 3;  // Time to first streamed chunk
       // Size of the response in bytes.
+      // Currently not populated by Studio.
       optional int64 response_size_bytes = 4;
 
       // Token Usage
@@ -18059,10 +18437,8 @@ message GeminiTelemetryEvent {
       optional int32 cache_read_token_count = 7;
 
       // Model Information
-      // The actual model ID that generated the response. This may be different
-      // from the model ID requested by the user (e.g., if the user requested a
-      // specific version of a model).
-      optional string actual_model_id = 8;
+      // Deprecated: no longer populated by Studio. Use EventEnvelope.model.
+      optional string actual_model_id = 8 [deprecated = true];
 
       // List from https://ai.google.dev/api/generate-content#FinishReason
       // Represents the semantic reason of why the model stopped generating
@@ -18629,6 +19005,8 @@ message StudioBotConfigurationEvent {
         // Logged when the system starts onboarding automatically in the
         // background.
         ENTRY_POINT_BACKGROUND = 2;
+        // User started onboarding from the ACP promotional banner.
+        ENTRY_POINT_ACP_PROMOTION = 3;
       }
 
       optional EntryPoint entry_point = 1;
@@ -18658,6 +19036,12 @@ message StudioBotConfigurationEvent {
         PAGE_ENTERPRISE_LICENSE_SELECTION = 5;
         // Enterprise self-assign
         PAGE_ENTERPRISE_SELF_ASSIGN_LICENSE = 6;
+
+        // Landing screen where user selects between built-in and external ACP
+        // agents.
+        PAGE_AGENT_SELECTION = 7;
+        // Terms of service review before installing an external ACP agent.
+        PAGE_AGENT_TERMS = 8;
       }
 
       // Logged when a page is shown to the user (impression).
@@ -18709,6 +19093,14 @@ message StudioBotConfigurationEvent {
     }
   }
 
+  // The envelope holds common metadata across Studio Bot configuration events.
+  message EventEnvelope {
+    // Details of the agent (built-in or external ACP agent) for this event.
+    // Reuses the standardized GeminiTelemetryEvent.AgentInfo.
+    optional GeminiTelemetryEvent.AgentInfo agent_info = 1;
+  }
+
+  optional EventEnvelope envelope = 2;
   optional OnboardingEvent onboarding_event = 1;
 }
 
@@ -21302,6 +21694,7 @@ message SkillsEvent {
     FIREBASE_SECURITY_RULES_AUDITOR = 39;
     FIRESTORE_RULES_CREATION = 40;
     XCODE_PROJECT_SETUP = 41;
+    ANDROID_JOURNEYS = 42;
   }
 }
 
@@ -21702,4 +22095,23 @@ message ImportProjectEvent {
   // Set when event_type = IMPORT_STARTED. Number of attached user skills
   // (SKILL.md files).
   optional int32 user_skill_count = 14;
+}
+
+// Event related to external updaters for Studio
+message ExternalUpdateManagerEvent {
+  enum ExternalUpdateManager {
+    UNKNOWN = 0;
+    // Not managed
+    NONE = 1;
+    // Toolbox App
+    TOOLBOX = 2;
+    // Snap
+    SNAP = 3;
+    // Flatpak
+    FLATPAK = 4;
+    // Homebrew
+    BREW = 5;
+  }
+
+  optional ExternalUpdateManager external_update_manager = 1;
 }

@@ -22,6 +22,7 @@
 #include "android-qemu2-glue/qemu-console-factory.h"
 #include "android/android.h"
 #include "android/avd/BugreportInfo.h"
+#include "android/avd/info.h"
 #include "android/base/files/IniFile.h"
 #include "android/base/system/System.h"
 #include "android/boot-properties.h"
@@ -368,7 +369,8 @@ static void prepareSkinConfig(AndroidHwConfig* hw, const char* dataDirectory) {
         const char* skin = nullptr;
         if (((hw->hw_device_name &&
               !strncmp("pixel_fold", hw->hw_device_name, 10)) ||
-             resizableEnabled34())) {
+             resizableEnabled34() ||
+             avdInfo_isGenericFoldable(hw->hw_device_name))) {
             skin = "pixel_fold";
         } else {
             skin = hw->hw_device_name;

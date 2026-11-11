@@ -145,17 +145,29 @@ def get_bid(args):
     return bid, build_type
 
 
-def obtain(args, bid: str, target: str, base_dir: Path, build_type: str):
-    """Obtains a specified target for a given build and integrates it into a Git repository.
+def obtain(
+    args,
+    bid: str,
+    target: str,
+    base_dir: Path,
+    build_type: str,
+    update_proto: bool = True,
+):
+    """Obtains a specified target for a given build and integrates it into a
+    Git repository.
 
     Args:
         args: An argparse.Namespace object containing the following arguments:
             - token: The authentication token for the Android Build Client.
-            - artifact: The artifact format string (to be formatted with bid and target).
+            - artifact: The artifact format string (to be formatted with bid and
+              target).
             - prefix: The prefix for the build name.
         bid: The Build ID (BID) of the target to obtain.
         target: The name of the target to obtain.
         base_dir: The base directory where the netsim prebuilt should live.
+        build_type: The build type ("submitted" or "pending").
+        update_proto: Whether to refresh top-level base_dir/proto from this
+            target archive.
     """
     logging.info("Obtaining target %s from build: %s", target, bid)
     ab_client = AndroidBuildClient(args.token, build_type)
@@ -179,6 +191,34 @@ def obtain(args, bid: str, target: str, base_dir: Path, build_type: str):
         artifact,
         bid,
     )
+
+    extracted_proto = dest / "proto"
+    if extracted_proto.exists():
+        if update_proto:
+            proto_dest = base_dir / "proto"
+            if proto_dest.exists():
+                logging.warning("Removing existing directory %s", proto_dest)
+                shutil.rmtree(proto_dest)
+                run(
+                    [
+                        "git",
+                        "-C",
+                        str(base_dir),
+                        "rm",
+                        "-rf",
+                        "--ignore-unmatch",
+                        "proto",
+                    ],
+                    dry_run=args.dry_run,
+                )
+            shutil.move(str(extracted_proto), str(proto_dest))
+            run(
+                ["git", "-C", str(base_dir), "add", "proto"],
+                dry_run=args.dry_run,
+            )
+        else:
+            shutil.rmtree(extracted_proto)
+
     run(["git", "-C", str(base_dir), "add", TARGET_MAP[target]], dry_run=args.dry_run)
 
 
@@ -203,10 +243,17 @@ def find_repo_root(start_directory=Path(__file__).resolve()) -> Path:
 def fetch_and_commit(args, bid, build_type, destination_dir):
     """Fetches artifacts, commits them, and uploads for review."""
     successful_obtains = 0
-    targets = [t.strip() for t in args.targets.split(",")]
+    targets = [t.strip() for t in args.targets.split(",") if t.strip()]
     for target in targets:
         try:
-            obtain(args, bid, target, destination_dir, build_type)
+            obtain(
+                args,
+                bid,
+                target,
+                destination_dir,
+                build_type,
+                update_proto=(successful_obtains == 0),
+            )
             successful_obtains += 1
         except Exception as e:
             logging.warning(
@@ -219,8 +266,10 @@ def fetch_and_commit(args, bid, build_type, destination_dir):
                 raise
 
     if build_type == "pending" and successful_obtains == 0:
+        target_list = ", ".join(targets)
         raise ValueError(
-            f"Could not obtain any of the targets ({', '.join(targets)}) for presubmit build {bid}"
+            f"Could not obtain any of the targets ({target_list}) for "
+            f"presubmit build {bid}"
         )
 
     # Only commit and upload if we actually got something.

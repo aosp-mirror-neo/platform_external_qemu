@@ -390,6 +390,29 @@ const char*  avdInfo_getAcpiIniPath( const AvdInfo*  i );
  */
 void         avdInfo_getSkinInfo( const AvdInfo*  i, char** pSkinName, char** pSkinDir );
 
+/* Checks the display size in config.ini.
+ *
+ * |commandLineSkin| is the value of the -skin option, or NULL. |skinName| and
+ * |skinDir| are the values returned by avdInfo_getSkinInfo().
+ * |lcdReplacesNumericSkin| is true when the emulator replaces a numeric skin
+ * with the hw.lcd size before using it, as main.cpp does when
+ * android_foldable_is_pixel_fold() is true.
+ *
+ * Nothing is checked when there is a -skin option or hw.displayless is set.
+ * Otherwise config.ini must set both hw.lcd.width and hw.lcd.height or
+ * neither. Unless |lcdReplacesNumericSkin| is true, a numeric
+ * "<width>x<height>" skin from config.ini (no skin directory) must also equal
+ * the LCD size or the LCD size rotated by 90 degrees.
+ *
+ * Returns false after printing an error that explains how to fix config.ini if
+ * a check fails, true otherwise.
+ */
+bool avdInfo_checkSkinMatchesLcd(const AvdInfo* i,
+                                 const char* commandLineSkin,
+                                 const char* skinName,
+                                 const char* skinDir,
+                                 bool lcdReplacesNumericSkin);
+
 /* Find a charmap file named <charmapName>.kcm for this AVD.
  * Returns the path of the file on success, or NULL if not found.
  * The result string must be freed by the caller.
@@ -512,6 +535,12 @@ int avdInfo_maxMultiDisplayEntries();
 
 /* Whether the skin has corresponding system overlay */
 bool avdInfo_skinHasOverlay(const char* skinName);
+
+/* Whether |deviceName| is one of the generic foldable profiles, "Foldable (4:3
+ * inner display)" or "Foldable (1:1 inner display)". System images ship no
+ * device-specific assets for them, so they use the generic Pixel Fold
+ * device-state configuration without any device overlay. */
+bool avdInfo_isGenericFoldable(const char* deviceName);
 
 /* the screen off timeout in miliseconds, after which the screen will be turned off
    do not delete the returned string.
