@@ -3227,12 +3227,13 @@ static uint64_t host_swap_used_mb(void)
 
     if (EnumPageFilesW(sum_pagefile_cb, &used_pages)) {
         pagefile_mb = (used_pages * qemu_real_host_page_size()) >> 20;
+        fprintf(stderr,
+                "ram-save: win32 pagefile used %" PRIu64
+                " MB, process non-resident %" PRIu64 " MB\n",
+                pagefile_mb, proc_nonresident_mb);
+        return MIN(pagefile_mb, proc_nonresident_mb);
     }
-    fprintf(stderr,
-            "ram-save: win32 pagefile used %" PRIu64
-            " MB, process non-resident %" PRIu64 " MB\n",
-            pagefile_mb, proc_nonresident_mb);
-    return MAX(pagefile_mb, proc_nonresident_mb);
+    return proc_nonresident_mb;
 #endif
     return 0;
 }
