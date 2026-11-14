@@ -298,11 +298,10 @@ static void whpx_gicv3_fill_local_state(
         if (is_direct && irq >= GIC_NR_SGIS) {
             edge = initial_state->BankedInterruptState[irq].EdgeTriggered;
         }
-        if (edge) {
-            pending |= asserted;
-            asserted = 0;
-        }
-
+        /*
+         * Keep Asserted as-is: Hyper-V tracks pending SGIs (INTIDs 0..15)
+         * exclusively in Asserted and ignores SetPending on restore.
+         */
         local_state->BankedInterruptState[irq].Enabled = enabled;
         local_state->BankedInterruptState[irq].EdgeTriggered = edge;
         local_state->BankedInterruptState[irq].Asserted = asserted;
