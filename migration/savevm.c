@@ -1965,6 +1965,13 @@ int qemu_savevm_state_non_iterable(QEMUFile *f, Error **errp)
 
         ret = vmstate_save(f, se, vmdesc, errp);
         if (ret) {
+            /*
+             * Callers such as qemu_savevm_state() judge completion by
+             * qemu_file_get_error(f); mark the stream failed (using -EINVAL
+             * if a legacy pre_save hook returned a positive error) so a
+             * truncated snapshot is never committed.
+             */
+            qemu_file_set_error(f, ret < 0 ? ret : -EINVAL);
             return ret;
         }
 

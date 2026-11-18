@@ -357,7 +357,13 @@ static void whpx_log_sync(MemoryListener *listener,
 {
     MemoryRegion *mr = section->mr;
 
-    if (!memory_region_is_ram(mr)) {
+    /*
+     * WHPX dirty-page tracking is not wired up in QEMU yet. When the VM is
+     * stopped (e.g. save_snapshot()), ram_list_init_bitmaps() already sets the
+     * initial migration bitmap to all-1s before the first sync, and vCPUs
+     * cannot dirty further pages before ram_save_complete()'s final sync.
+     */
+    if (!memory_region_is_ram(mr) || !runstate_is_running()) {
         return;
     }
 

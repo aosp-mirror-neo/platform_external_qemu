@@ -110,6 +110,38 @@ static void create_simple_device(const VirtMachineState *vms, int devid,
                      clocks, num_clocks);
 }
 
+static void goldfish_add_fstab_entry(void *fdt, const char *node_path,
+                                     const char *compatible,
+                                     const char *device_in_guest) {
+  if (!device_in_guest || !device_in_guest[0]) {
+    return;
+  }
+
+  qemu_fdt_add_subnode(fdt, node_path);
+  qemu_fdt_setprop_string(fdt, node_path, "compatible", compatible);
+  qemu_fdt_setprop_string(fdt, node_path, "dev", device_in_guest);
+  qemu_fdt_setprop_string(fdt, node_path, "type", "ext4");
+  qemu_fdt_setprop_string(fdt, node_path, "mnt_flags", "ro");
+  qemu_fdt_setprop_string(fdt, node_path, "fsmgr_flags", "wait");
+}
+
+static void goldfish_add_fstab(void *fdt, const char *system_device_in_guest,
+                               const char *vendor_device_in_guest) {
+  static const char kFstabNodePath[] = "/firmware/android/fstab";
+  const bool has_system = system_device_in_guest && system_device_in_guest[0];
+  const bool has_vendor = vendor_device_in_guest && vendor_device_in_guest[0];
+  if (!has_system && !has_vendor) {
+    return;
+  }
+
+  qemu_fdt_add_subnode(fdt, kFstabNodePath);
+  qemu_fdt_setprop_string(fdt, kFstabNodePath, "compatible", "android,fstab");
+  goldfish_add_fstab_entry(fdt, "/firmware/android/fstab/system",
+                           "android,system", system_device_in_guest);
+  goldfish_add_fstab_entry(fdt, "/firmware/android/fstab/vendor",
+                           "android,vendor", vendor_device_in_guest);
+}
+
 static void arm_init_goldfish(MachineState *machine) {
   GSList *machines = object_class_get_list(TYPE_MACHINE, false);
   MachineClass *machine_class;
@@ -142,11 +174,8 @@ static void arm_init_goldfish(MachineState *machine) {
   qemu_fdt_setprop_string(fdt, "/firmware/android", "hardware", "ranchu");
 
 
-  // Device tree fstab seems not to be needed with the dynamic partition boot method.
-  // if (!ams->dynamic_partition) {
-  //   goldfish_add_fstab(fdt, ams->system_device_in_guest,
-  //                      ams->vendor_device_in_guest);
-  // }
+  goldfish_add_fstab(fdt, ams->system_device_in_guest,
+                     ams->vendor_device_in_guest);
 
   create_simple_device(vms, RANCHU_GOLDFISH_BATTERY, "goldfish_battery",
                        "google,goldfish-battery\0"
