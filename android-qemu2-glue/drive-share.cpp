@@ -150,10 +150,8 @@ static bool parseQemuOptForQcow2(bool wipeData) {
         const char* qcow2_image_path = nullptr;
         if (opts) {
             qcow2_image_path = qemu_opt_get(opts, "file");
-            if (qcow2_image_path) {
-                sDriveShare->srcImagePaths.emplace(images[p].drive,
-                                                   qcow2_image_path);
-            }
+            sDriveShare->srcImagePaths.emplace(images[p].drive,
+                                               qcow2_image_path);
         }
         const char* backing_image_path = images[p].backing_image_path;
         if (!backing_image_path || *backing_image_path == '\0') {
@@ -371,7 +369,7 @@ extern "C" {
 static int drive_init(void* opaque, QemuOpts* opts, Error** errp) {
     DriveInitParam* param = (DriveInitParam*)opaque;
     const char* id = opts->id;
-    if (id && sDriveShare->srcImagePaths.count(id)) {
+    if (id) {
         std::string path = initDrivePath(id, param->shareMode, opts, false);
         qemu_opt_set(opts, "file", path.c_str(), errp);
         if (needCreateTmp(id, param->shareMode, opts) && param->snapshotName) {
