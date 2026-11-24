@@ -60,6 +60,9 @@ void whpx_apic_get(APICCommonState *s);
 
 /* This should eventually come from the Windows SDK */
 #define WHV_E_UNKNOWN_PROPERTY 0x80370302
+#ifndef WHV_E_INSUFFICIENT_BUFFER
+#define WHV_E_INSUFFICIENT_BUFFER 0x80370301L
+#endif
 
 #define LIST_WINHVPLATFORM_FUNCTIONS(X) \
   X(HRESULT, WHvGetCapability, (WHV_CAPABILITY_CODE CapabilityCode, VOID* CapabilityBuffer, UINT32 CapabilityBufferSizeInBytes, UINT32* WrittenSizeInBytes)) \
@@ -94,6 +97,14 @@ void whpx_apic_get(APICCommonState *s);
          UINT32 StateSize)) \
   X(HRESULT, WHvResetPartition, \
         (WHV_PARTITION_HANDLE Partition)) \
+  X(HRESULT, WHvGetVirtualProcessorState, \
+        (WHV_PARTITION_HANDLE Partition, UINT32 VpIndex, \
+         WHV_VIRTUAL_PROCESSOR_STATE_TYPE StateType, \
+         VOID* Buffer, UINT32 BufferSizeInBytes, UINT32* BytesWritten)) \
+  X(HRESULT, WHvSetVirtualProcessorState, \
+        (WHV_PARTITION_HANDLE Partition, UINT32 VpIndex, \
+         WHV_VIRTUAL_PROCESSOR_STATE_TYPE StateType, \
+         const VOID* Buffer, UINT32 BufferSizeInBytes)) \
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #define LIST_WINHVEMULATION_FUNCTIONS(X) \
