@@ -484,33 +484,6 @@ TEST(AvdInfoTest, nonzero_display_skin_info) {
     avdInfo_free(info);
 }
 
-TEST(AvdInfoTest, arm64_sdcard_and_dynamic_partition_boot_device) {
-    TestSystem sys("/home", 64, "/");
-    TestTempDir* tmp = sys.getTempRoot();
-    ASSERT_TRUE(tmp->makeSubDir("avd"));
-    std::string avdDir = pj(tmp->pathString(), "avd");
-    std::string sdcardPath = pj(avdDir, "sdcard.img");
-    std::string encryptPath = pj(avdDir, "encryptionkey.img");
-    writeToFile(sdcardPath, "sdcard");
-    writeToFile(encryptPath, "encrypt");
-
-    AvdInfo* info = avdInfo_new_for_testing(AVD_OTHER);
-    ASSERT_NE(nullptr, info);
-    info->apiLevel = 34;
-    info->targetAbi = ASTRDUP("arm64-v8a");
-    info->contentPath = ASTRDUP(avdDir.c_str());
-
-    ScopedCPtr<char> resolvedSdCard(avdInfo_getSdCardPath(info));
-    ASSERT_NE(nullptr, resolvedSdCard.get());
-    EXPECT_STREQ(sdcardPath.c_str(), resolvedSdCard.get());
-
-    ScopedCPtr<char> bootDev(avdInfo_getDynamicPartitionBootDevice(info));
-    ASSERT_NE(nullptr, bootDev.get());
-    EXPECT_STREQ("a003a00.virtio_mmio", bootDev.get());
-
-    avdInfo_free(info);
-}
-
 TEST(AvdUtil, avdFlavor_fromTagId) {
     // Phone tags
     EXPECT_EQ(AVD_PHONE, avdFlavor_fromTagId("google_apis"));

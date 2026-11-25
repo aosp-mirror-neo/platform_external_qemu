@@ -1425,7 +1425,17 @@ char* avdInfo_getDefaultCachePath(const AvdInfo* i) {
     return _getFullFilePath(i->contentPath, imageName);
 }
 
+static bool is_armish(const AvdInfo* i);
+
 char* avdInfo_getSdCardPath(const AvdInfo* i) {
+    if (i->apiLevel >= 30 && is_armish(i)) {
+        // BUG: 174481551
+        // ignore sdcard for arm when api is >=30, as
+        // it makes setting up the metadata disk id tricky
+        // TODO: figure out better approach
+        dprint("INFO: ignore sdcard for arm at api level >= 30");
+        return NULL;
+    }
     const char* imageName = _imageFileNames[AVD_IMAGE_SDCARD];
     char* path;
 
@@ -1517,6 +1527,15 @@ const char* const arm_device_id[] = {
         "a003e00", "a003c00", "a003a00", "a003800", "a003600", "a003400",
 };
 
+static bool has_sdcard(const AvdInfo* i) {
+    char* path = avdInfo_getSdCardPath(i);
+    if (path) {
+        free(path);
+        return true;
+    }
+    return false;
+}
+
 static bool has_vendor(const AvdInfo* i) {
     char* path = avdInfo_getVendorInitImagePath(i);
     if (path) {
@@ -1543,16 +1562,18 @@ static bool has_encryption(const AvdInfo* i) {
 static char* get_device_path(const AvdInfo* info, const char* image) {
     const char* device_table[6] = {"", "", "", "", "", ""};
     int i = 0;
-    device_table[i++] = "sdcard";
-    if (has_encryption(info)) {
-        device_table[i++] = "encryption";
+    if (has_sdcard(info)) {
+        device_table[i++] = "sdcard";
     }
-    device_table[i++] = "system";
-    device_table[i++] = "userdata";
     if (has_vendor(info)) {
         device_table[i++] = "vendor";
     }
+    if (has_encryption(info)) {
+        device_table[i++] = "encryption";
+    }
+    device_table[i++] = "userdata";
     device_table[i++] = "cache";
+    device_table[i++] = "system";
     int count = ARRAY_SIZE(device_table);
     for (i = 0; i < count; ++i) {
         if (strcmp(image, device_table[i]) == 0) {
